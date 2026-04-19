@@ -1,7 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/v4run/hangar/internal/cli"
+)
 
 func main() {
-	fmt.Println("hangar")
+	if err := cli.NewRootCmd().Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
