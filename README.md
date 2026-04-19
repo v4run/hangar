@@ -77,15 +77,15 @@ Launch with `hangar` (no arguments).
 ```
 ┌──────────────┬──────────────────────────────────────┐
 │ / filter...  │ prod-api  deploy@10.0.1.50:22        │
-│              │ key ~/.ssh/id_ed25519                 │
+│              │ key ~/.ssh/id_ed25519                │
 │ > prod-api   │ via bastion                          │
 │   bastion    │ production, api                      │
 │              │                                      │
 │ ▾ staging    │ notes maintenance window: Sun 2-4am  │
 │     web-1    │                                      │
-│     web-2    │ Scripts                               │
-│ ▸ dev (3)    │ > tail logs            $ tail -f ...  │
-│              │   disk usage  [global] $ df -h        │
+│     web-2    │ Scripts                              │
+│ ▸ dev (3)    │ > tail logs            $ tail -f ... │
+│              │   disk usage  [global] $ df -h       │
 ├──────────────┴──────────────────────────────────────┤
 │ n:new e:edit d:del g:group x:cut y:paste enter:...  │
 └─────────────────────────────────────────────────────┘
@@ -95,32 +95,32 @@ Launch with `hangar` (no arguments).
 
 | Key       | Action                                         |
 | --------- | ---------------------------------------------- |
-| `j` / `k` | Navigate connections and groups                 |
-| `/`       | Filter connections (by name or tag)              |
-| `n`       | New connection                                   |
-| `e`       | Edit selected connection                         |
-| `d`       | Delete connection or group                       |
-| `t`       | Manage tags (prefix with `-` to remove)          |
-| `g`       | Create new group                                 |
-| `x`       | Cut connection (for moving between groups)       |
-| `y`       | Paste connection into group at cursor            |
-| `space`   | Expand/collapse group                            |
-| `l`       | Focus scripts pane (right side)                  |
-| `s`       | Sync from SSH config (selective import)          |
-| `Enter`   | Connect (full-screen SSH, TUI resumes on exit)   |
-| `q`       | Quit                                             |
+| `j` / `k` | Navigate connections and groups                |
+| `/`       | Filter connections (by name or tag)            |
+| `n`       | New connection                                 |
+| `e`       | Edit selected connection                       |
+| `d`       | Delete connection or group                     |
+| `t`       | Manage tags (prefix with `-` to remove)        |
+| `g`       | Create new group                               |
+| `x`       | Cut connection (for moving between groups)     |
+| `y`       | Paste connection into group at cursor          |
+| `space`   | Expand/collapse group                          |
+| `l`       | Focus scripts pane (right side)                |
+| `s`       | Sync from SSH config (selective import)        |
+| `Enter`   | Connect (full-screen SSH, TUI resumes on exit) |
+| `q`       | Quit                                           |
 
 ### Keybindings — Scripts Pane (right pane)
 
-| Key       | Action                              |
-| --------- | ----------------------------------- |
-| `j` / `k` | Navigate scripts                   |
-| `n`       | New script                          |
-| `e`       | Edit script                         |
-| `d`       | Delete script                       |
-| `o`       | Edit notes                          |
-| `Enter`   | Run script on server                |
-| `h`       | Back to connection list             |
+| Key       | Action                  |
+| --------- | ----------------------- |
+| `j` / `k` | Navigate scripts        |
+| `n`       | New script              |
+| `e`       | Edit script             |
+| `d`       | Delete script           |
+| `o`       | Edit notes              |
+| `Enter`   | Run script on server    |
+| `h`       | Back to connection list |
 
 ## Groups
 

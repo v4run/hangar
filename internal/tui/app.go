@@ -73,21 +73,21 @@ type Model struct {
 	cutConnection    string          // name of connection being moved (cut/paste)
 	groupNameInput   string          // input for new group name
 	quitting         bool
-	form     formMode
-	formFields       []string // field values: [name, host, port, user, key, jump, tags]
-	formCursor       int      // which field is focused (0-6)
-	formError        string   // validation error message
+	form             formMode
+	formFields       []string            // field values: [name, host, port, user, key, jump, tags]
+	formCursor       int                 // which field is focused (0-6)
+	formError        string              // validation error message
 	formTarget       string              // connection name being edited/deleted/tagged
 	tagInput         string              // input for tag mode
 	syncEntries      []config.Connection // parsed SSH config entries for sync selection
-	syncSelected     []bool             // selection state per entry
-	syncCursor       int                // cursor position in sync list
-	scriptCursor     int                // cursor in scripts list
-	scriptName       string             // script name being added/edited
-	scriptCommand    string             // script command being added/edited
-	scriptField      int                // 0=name, 1=command
-	scriptTarget     int                // index of script being edited
-	notesInput       string             // notes text being edited
+	syncSelected     []bool              // selection state per entry
+	syncCursor       int                 // cursor position in sync list
+	scriptCursor     int                 // cursor in scripts list
+	scriptName       string              // script name being added/edited
+	scriptCommand    string              // script command being added/edited
+	scriptField      int                 // 0=name, 1=command
+	scriptTarget     int                 // index of script being edited
+	notesInput       string              // notes text being edited
 }
 
 type sshExitMsg struct{ err error }
@@ -674,7 +674,7 @@ func (m Model) renderScriptForm() string {
 	b.WriteString("\n")
 
 	if m.formError != "" {
-		b.WriteString("\n" + errorStyle.Render("  " + m.formError))
+		b.WriteString("\n" + errorStyle.Render("  "+m.formError))
 	}
 
 	return b.String()
@@ -1258,7 +1258,7 @@ func (m Model) renderForm() string {
 	}
 
 	if m.formError != "" {
-		b.WriteString("\n" + errorStyle.Render("  " + m.formError))
+		b.WriteString("\n" + errorStyle.Render("  "+m.formError))
 	}
 
 	return b.String()
@@ -1281,7 +1281,7 @@ func (m Model) renderAddGroup() string {
 	b.WriteString(activeFieldStyle.Render("> name") + " " + normalStyle.Render(m.groupNameInput) + cursorStyle.Render("_"))
 
 	if m.formError != "" {
-		b.WriteString("\n\n" + errorStyle.Render("  " + m.formError))
+		b.WriteString("\n\n" + errorStyle.Render("  "+m.formError))
 	}
 
 	return b.String()
