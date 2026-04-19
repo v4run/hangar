@@ -38,10 +38,11 @@ const (
 	fieldKey
 	fieldJump
 	fieldTags
+	fieldPassword
 	fieldCount
 )
 
-var fieldLabels = []string{"Name", "Host", "Port", "User", "Key", "Jump", "Tags"}
+var fieldLabels = []string{"Name", "Host", "Port", "User", "Key", "Jump", "Tags", "Pass"}
 
 type Model struct {
 	cfg              *config.HangarConfig
@@ -268,7 +269,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.execOutput = nil
 		case "a":
 			m.form = formAdd
-			m.formFields = []string{"", "", "22", "", "", "", ""}
+			m.formFields = []string{"", "", "22", "", "", "", "", ""}
 			m.formCursor = 0
 			m.formError = ""
 		case "enter":
@@ -277,9 +278,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c := conns[m.cursor]
 				m.form = formEdit
 				m.formTarget = c.Name
+				existingPass, _ := config.GetPassword(c.Name)
 				m.formFields = []string{
 					c.Name, c.Host, fmt.Sprintf("%d", c.Port), c.User,
-					c.IdentityFile, c.JumpHost, strings.Join(c.Tags, ", "),
+					c.IdentityFile, c.JumpHost, strings.Join(c.Tags, ", "), existingPass,
 				}
 				m.formCursor = 1 // skip name field for edit
 				m.formError = ""
@@ -669,6 +671,9 @@ func (m Model) renderMainPane() string {
 	if c.IdentityFile != "" {
 		b.WriteString(fmt.Sprintf("  Key:  %s\n", c.IdentityFile))
 	}
+	if pass, err := config.GetPassword(c.Name); err == nil && pass != "" {
+		b.WriteString("  Pass: ****\n")
+	}
 	if c.JumpHost != "" {
 		b.WriteString(fmt.Sprintf("  Jump: %s\n", c.JumpHost))
 	}
@@ -718,6 +723,7 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 	key := strings.TrimSpace(m.formFields[fieldKey])
 	jump := strings.TrimSpace(m.formFields[fieldJump])
 	tagsStr := strings.TrimSpace(m.formFields[fieldTags])
+	password := m.formFields[fieldPassword]
 
 	// Validate
 	if name == "" {
@@ -774,6 +780,17 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 	if err := config.Save(m.configDir, m.cfg); err != nil {
 		m.formError = "Save failed: " + err.Error()
 		return m, nil
+	}
+
+	// Save or delete password in keychain
+	connName := name
+	if m.form == formEdit {
+		connName = m.formTarget
+	}
+	if password != "" {
+		config.SetPassword(connName, password)
+	} else {
+		config.DeletePassword(connName)
 	}
 
 	m.form = formNone
@@ -848,14 +865,20 @@ func (m Model) renderForm() string {
 		label := fmt.Sprintf("  %s: ", fieldLabels[i])
 		value := m.formFields[i]
 
+		// Mask password field
+		displayValue := value
+		if i == fieldPassword && value != "" {
+			displayValue = strings.Repeat("*", len(value))
+		}
+
 		if i == m.formCursor {
 			b.WriteString(selectedStyle.Render(label))
-			b.WriteString(value + "_")
+			b.WriteString(displayValue + "_")
 		} else {
 			if m.form == formEdit && i == fieldName {
-				b.WriteString(normalStyle.Render(label + value + " (read-only)"))
+				b.WriteString(normalStyle.Render(label + displayValue + " (read-only)"))
 			} else {
-				b.WriteString(normalStyle.Render(label + value))
+				b.WriteString(normalStyle.Render(label + displayValue))
 			}
 		}
 		b.WriteString("\n")

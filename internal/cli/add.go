@@ -8,7 +8,7 @@ import (
 )
 
 func newAddCmd() *cobra.Command {
-	var host, user, identityFile, jumpHost string
+	var host, user, identityFile, jumpHost, password string
 	var port int
 	var tags []string
 
@@ -39,6 +39,10 @@ func newAddCmd() *cobra.Command {
 				return err
 			}
 
+			if password != "" {
+				config.SetPassword(args[0], password)
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "Added connection %q\n", args[0])
 			return nil
 		},
@@ -50,6 +54,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&identityFile, "identity-file", "", "path to SSH key")
 	cmd.Flags().StringVar(&jumpHost, "jump-host", "", "jump host connection name")
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "tags for this connection")
+	cmd.Flags().StringVar(&password, "password", "", "password (stored in system keychain)")
 	cmd.MarkFlagRequired("host")
 	cmd.MarkFlagRequired("user")
 
