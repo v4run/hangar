@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -388,6 +389,8 @@ func (m Model) sidebarItems() []sidebarItem {
 			groupSeen[g] = true
 		}
 	}
+
+	sort.Strings(groupOrder)
 
 	// Grouped connections
 	for _, g := range groupOrder {
