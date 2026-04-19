@@ -14,31 +14,33 @@ import (
 
 // Session represents an active SSH connection running inside a PTY.
 type Session struct {
-	Name   string
-	conn   *config.Connection
-	cmd    *exec.Cmd
-	ptmx   *os.File
-	output []byte
-	mu     sync.Mutex
-	active bool
+	Name    string
+	conn    *config.Connection
+	cmd     *exec.Cmd
+	ptmx    *os.File
+	output  []byte
+	mu      sync.Mutex
+	active  bool
+	cleanup func()
 }
 
 // NewSession starts an SSH session in a PTY for the given connection.
 func NewSession(conn *config.Connection, jumpHost *config.Connection) (*Session, error) {
-	args := sshpkg.BuildSSHArgs(conn, jumpHost)
-	cmd := exec.Command("ssh", args...)
+	cmd, cleanup := sshpkg.PrepareCommand(conn, jumpHost)
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("starting pty: %w", err)
 	}
 
 	s := &Session{
-		Name:   conn.Name,
-		conn:   conn,
-		cmd:    cmd,
-		ptmx:   ptmx,
-		active: true,
+		Name:    conn.Name,
+		conn:    conn,
+		cmd:     cmd,
+		ptmx:    ptmx,
+		active:  true,
+		cleanup: cleanup,
 	}
 
 	go s.readOutput()
@@ -91,6 +93,9 @@ func (s *Session) Close() {
 	if s.cmd.Process != nil {
 		s.cmd.Process.Kill()
 		s.cmd.Wait() //nolint:errcheck
+	}
+	if s.cleanup != nil {
+		s.cleanup()
 	}
 	s.mu.Lock()
 	s.active = false
