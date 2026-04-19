@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -82,6 +84,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Re-render to show updated session output
 		if m.hasActiveSessions() {
 			return m, tickCmd()
+		}
+
+	case syncResultMsg:
+		if msg.err == nil {
+			m.sshConfigChanged = false
 		}
 
 	case execResultMsg:
@@ -353,7 +360,26 @@ func (m Model) filteredConnections() []config.Connection {
 
 func (m Model) doSync() tea.Cmd {
 	return func() tea.Msg {
-		return nil
+		gc, err := config.LoadGlobal(m.configDir)
+		if err != nil {
+			return syncResultMsg{err: err}
+		}
+
+		sshPath := gc.SSHConfigPath
+		if sshPath == "~/.ssh/config" {
+			home, _ := os.UserHomeDir()
+			sshPath = filepath.Join(home, ".ssh", "config")
+		}
+
+		added, updated, err := m.cfg.SyncFromSSHConfig(sshPath)
+		if err != nil {
+			return syncResultMsg{err: err}
+		}
+
+		// Save updated config
+		config.Save(m.configDir, m.cfg)
+
+		return syncResultMsg{added: added, updated: updated}
 	}
 }
 
@@ -551,6 +577,12 @@ func (m Model) renderMainPane() string {
 	}
 
 	return b.String()
+}
+
+type syncResultMsg struct {
+	added   int
+	updated int
+	err     error
 }
 
 type execResultMsg struct {
