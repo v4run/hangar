@@ -57,7 +57,16 @@ func (s *Session) readOutput() {
 		n, err := s.ptmx.Read(buf)
 		if n > 0 {
 			s.mu.Lock()
-			s.output = append(s.output, buf[:n]...)
+			chunk := buf[:n]
+
+			// Detect clear screen sequences and reset buffer
+			if bytes.Contains(chunk, []byte("\x1b[2J")) ||
+				bytes.Contains(chunk, []byte("\x1b[H\x1b[2J")) ||
+				bytes.Contains(chunk, []byte("\x1bc")) {
+				s.output = nil
+			}
+
+			s.output = append(s.output, chunk...)
 			// Keep only last 64KB of output
 			if len(s.output) > 65536 {
 				s.output = s.output[len(s.output)-65536:]

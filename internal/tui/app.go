@@ -509,8 +509,8 @@ func (m Model) View() string {
 
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		sidebarStyle.Width(sidebarWidth).Height(contentHeight).Render(sidebar),
-		mainPaneStyle.Width(m.width-sidebarWidth-3).Height(contentHeight).Render(mainPane),
+		sidebarStyle.Width(sidebarWidth).Height(contentHeight).MaxHeight(contentHeight).Render(sidebar),
+		mainPaneStyle.Width(m.width-sidebarWidth-3).Height(contentHeight).MaxHeight(contentHeight).Render(mainPane),
 	)
 
 	// Status bar
