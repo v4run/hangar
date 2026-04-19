@@ -150,12 +150,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.syncCursor = 0
 			m.form = formSync
-		case "a":
+		case "n":
 			m.form = formAdd
 			m.formFields = []string{"", "", "22", "", "", "", "", ""}
 			m.formCursor = 0
 			m.formError = ""
-		case "enter":
+		case "e":
 			conns := m.filteredConnections()
 			if m.cursor < len(conns) {
 				c := conns[m.cursor]
@@ -169,7 +169,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.formCursor = 1 // skip name field for edit
 				m.formError = ""
 			}
-		case "x":
+		case "d":
 			conns := m.filteredConnections()
 			if m.cursor < len(conns) {
 				m.form = formDelete
@@ -182,7 +182,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.formTarget = conns[m.cursor].Name
 				m.tagInput = ""
 			}
-		case "c":
+		case "enter":
 			// Connect to highlighted connection — full screen SSH
 			conns := m.filteredConnections()
 			if m.cursor < len(conns) {
@@ -315,7 +315,7 @@ func (m Model) renderStatusBar() string {
 	if m.form == formSync {
 		return statusBarStyle.Render(" SYNC: [space]toggle [a]ll [n]one [Enter]import [Esc]cancel")
 	}
-	return statusBarStyle.Render(" [a]dd [enter]edit [x]del [c]onnect [s]ync [t]ag [/]find [q]uit")
+	return statusBarStyle.Render(" [n]ew [e]dit [d]el [enter]connect [s]ync [t]ag [/]find [q]uit")
 }
 
 func (m Model) renderSidebar() string {
