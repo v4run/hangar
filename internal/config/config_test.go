@@ -172,6 +172,40 @@ func TestAddTags(t *testing.T) {
 	}
 }
 
+func TestAddConnectionValidation(t *testing.T) {
+	cfg := &HangarConfig{}
+
+	// Empty name
+	err := cfg.Add(Connection{Name: "", Host: "10.0.0.1", Port: 22, User: "root"})
+	if err == nil {
+		t.Fatal("expected error for empty name")
+	}
+
+	// Empty host
+	err = cfg.Add(Connection{Name: "test", Host: "", Port: 22, User: "root"})
+	if err == nil {
+		t.Fatal("expected error for empty host")
+	}
+
+	// Empty user
+	err = cfg.Add(Connection{Name: "test", Host: "10.0.0.1", Port: 22, User: ""})
+	if err == nil {
+		t.Fatal("expected error for empty user")
+	}
+
+	// Invalid port
+	err = cfg.Add(Connection{Name: "test", Host: "10.0.0.1", Port: 0, User: "root"})
+	if err == nil {
+		t.Fatal("expected error for zero port")
+	}
+
+	// Negative port
+	err = cfg.Add(Connection{Name: "test", Host: "10.0.0.1", Port: -1, User: "root"})
+	if err == nil {
+		t.Fatal("expected error for negative port")
+	}
+}
+
 func TestRemoveTags(t *testing.T) {
 	cfg := &HangarConfig{
 		Connections: []Connection{

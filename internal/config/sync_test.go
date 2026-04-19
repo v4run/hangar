@@ -74,6 +74,59 @@ func TestHashSSHConfig(t *testing.T) {
 	}
 }
 
+func TestParseSSHConfigWithEquals(t *testing.T) {
+	dir := t.TempDir()
+	sshConfig := `Host equaltest
+    HostName=10.0.0.50
+    User=admin
+    Port=2222
+`
+	path := filepath.Join(dir, "config")
+	os.WriteFile(path, []byte(sshConfig), 0600)
+
+	conns, err := ParseSSHConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conns) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(conns))
+	}
+	if conns[0].Host != "10.0.0.50" || conns[0].User != "admin" || conns[0].Port != 2222 {
+		t.Fatalf("wrong values: %+v", conns[0])
+	}
+}
+
+func TestParseSSHConfigWithMatch(t *testing.T) {
+	dir := t.TempDir()
+	sshConfig := `Host normalhost
+    HostName 10.0.0.1
+    User admin
+
+Match host *.internal
+    ProxyJump bastion
+
+Host aftermatch
+    HostName 10.0.0.2
+    User deploy
+`
+	path := filepath.Join(dir, "config")
+	os.WriteFile(path, []byte(sshConfig), 0600)
+
+	conns, err := ParseSSHConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conns) != 2 {
+		t.Fatalf("expected 2 connections (skipping Match), got %d", len(conns))
+	}
+	if conns[0].Name != "normalhost" {
+		t.Fatalf("expected normalhost, got %s", conns[0].Name)
+	}
+	if conns[1].Name != "aftermatch" {
+		t.Fatalf("expected aftermatch, got %s", conns[1].Name)
+	}
+}
+
 func TestSyncFromSSHConfig(t *testing.T) {
 	dir := t.TempDir()
 	sshPath := filepath.Join(dir, "ssh_config")

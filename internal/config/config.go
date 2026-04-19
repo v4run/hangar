@@ -47,6 +47,18 @@ func Save(dir string, cfg *HangarConfig) error {
 }
 
 func (cfg *HangarConfig) Add(conn Connection) error {
+	if conn.Name == "" {
+		return fmt.Errorf("connection name is required")
+	}
+	if conn.Host == "" {
+		return fmt.Errorf("host is required for connection %q", conn.Name)
+	}
+	if conn.User == "" {
+		return fmt.Errorf("user is required for connection %q", conn.Name)
+	}
+	if conn.Port <= 0 {
+		return fmt.Errorf("port must be positive for connection %q", conn.Name)
+	}
 	for _, c := range cfg.Connections {
 		if c.Name == conn.Name {
 			return fmt.Errorf("connection %q already exists", conn.Name)

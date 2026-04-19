@@ -19,6 +19,20 @@ func HashFile(path string) (string, error) {
 	return fmt.Sprintf("%x", h), nil
 }
 
+// splitDirective splits an SSH config directive into key and value.
+// It handles both "Key Value" (space/tab) and "Key=Value" syntax.
+func splitDirective(line string) (key, value string, ok bool) {
+	// Try space/tab first
+	if i := strings.IndexAny(line, " \t"); i > 0 {
+		return strings.TrimSpace(line[:i]), strings.TrimSpace(line[i+1:]), true
+	}
+	// Try equals
+	if i := strings.Index(line, "="); i > 0 {
+		return strings.TrimSpace(line[:i]), strings.TrimSpace(line[i+1:]), true
+	}
+	return "", "", false
+}
+
 func ParseSSHConfig(path string) ([]Connection, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -36,12 +50,22 @@ func ParseSSHConfig(path string) ([]Connection, error) {
 			continue
 		}
 
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) != 2 {
+		key, val, ok := splitDirective(line)
+		if !ok {
 			continue
 		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
+
+		if strings.EqualFold(key, "Match") {
+			// Finalize current host if any
+			if current != nil {
+				if current.Port == 0 {
+					current.Port = 22
+				}
+				conns = append(conns, *current)
+			}
+			current = nil // skip Match block directives
+			continue
+		}
 
 		if strings.EqualFold(key, "Host") {
 			if val == "*" {
