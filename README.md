@@ -95,7 +95,7 @@ Launch with `hangar` (no arguments).
 │ > prod-api   │                                      │
 │              │                                      │
 ├──────────────┴──────────────────────────────────────┤
-│ [c]onnect [d]isconnect [e]xec [s]ync [t]ag [/]find │
+│ [a]dd [enter]edit [x]del [c]onnect [e]xec [t]ag    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -107,6 +107,10 @@ Launch with `hangar` (no arguments).
 |-----|--------|
 | `j` / `k` | Navigate connections |
 | `/` | Filter connections (by name or tag) |
+| `a` | Add new connection |
+| `Enter` | Edit selected connection |
+| `x` | Delete selected connection |
+| `t` | Manage tags (prefix with `-` to remove) |
 | `c` | Connect to selected server |
 | `e` | Execute command across servers |
 | `s` | Sync from SSH config |
