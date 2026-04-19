@@ -613,6 +613,7 @@ func (m Model) startExec() tea.Cmd {
 			serverNames[i] = t.Name
 		}
 		colors := fleet.AssignColors(serverNames)
+		nameWidth := fleet.MaxNameWidth(serverNames)
 
 		output := make(chan fleet.Result, 100)
 		go fleet.Execute(targets, command, output, cfg)
@@ -621,10 +622,10 @@ func (m Model) startExec() tea.Cmd {
 		for result := range output {
 			if result.Err != nil {
 				lines = append(lines, fleet.FormatLine(result.Server, colors[result.Server],
-					fmt.Sprintf("ERROR: %v", result.Err), true))
+					fmt.Sprintf("ERROR: %v", result.Err), true, nameWidth))
 			} else {
 				lines = append(lines, fleet.FormatLine(result.Server, colors[result.Server],
-					result.Line, true))
+					result.Line, true, nameWidth))
 			}
 		}
 

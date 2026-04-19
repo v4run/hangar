@@ -26,9 +26,19 @@ func AssignColors(servers []string) map[string]string {
 	return colors
 }
 
-func FormatLine(serverName, color, line string, showBorder bool) string {
+func FormatLine(serverName, color, line string, showBorder bool, nameWidth int) string {
 	if !showBorder {
 		return line
 	}
-	return fmt.Sprintf("%s█%s %-15s %s", color, colorReset, serverName, line)
+	return fmt.Sprintf("%s█%s %-*s %s", color, colorReset, nameWidth, serverName, line)
+}
+
+func MaxNameWidth(servers []string) int {
+	max := 0
+	for _, s := range servers {
+		if len(s) > max {
+			max = len(s)
+		}
+	}
+	return max
 }

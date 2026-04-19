@@ -22,7 +22,7 @@ func newRemoveCmd() *cobra.Command {
 			if err := saveConfig(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("Removed connection %q\n", args[0])
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed connection %q\n", args[0])
 			return nil
 		},
 	}

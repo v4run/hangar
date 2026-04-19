@@ -34,7 +34,7 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Synced from %s: %d added, %d updated\n", sshPath, added, updated)
+			fmt.Fprintf(cmd.OutOrStdout(), "Synced from %s: %d added, %d updated\n", sshPath, added, updated)
 			return nil
 		},
 	}

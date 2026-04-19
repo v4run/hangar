@@ -34,8 +34,10 @@ func newExecCmd() *cobra.Command {
 				serverNames[i] = t.Name
 			}
 			colors := fleet.AssignColors(serverNames)
+			nameWidth := fleet.MaxNameWidth(serverNames)
 
-			fmt.Printf("hangar exec: %s  (%d servers)\n", command, len(targets))
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "hangar exec: %s  (%d servers)\n", command, len(targets))
 
 			output := make(chan fleet.Result, 100)
 			go fleet.Execute(targets, command, output, cfg)
@@ -48,10 +50,10 @@ func newExecCmd() *cobra.Command {
 				showBorder := filter == ""
 				if result.Err != nil {
 					color := colors[result.Server]
-					fmt.Println(fleet.FormatLine(result.Server, color, fmt.Sprintf("ERROR: %v", result.Err), showBorder))
+					fmt.Fprintln(out, fleet.FormatLine(result.Server, color, fmt.Sprintf("ERROR: %v", result.Err), showBorder, nameWidth))
 				} else {
 					color := colors[result.Server]
-					fmt.Println(fleet.FormatLine(result.Server, color, result.Line, showBorder))
+					fmt.Fprintln(out, fleet.FormatLine(result.Server, color, result.Line, showBorder, nameWidth))
 				}
 			}
 

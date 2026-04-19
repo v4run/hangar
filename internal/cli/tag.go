@@ -22,7 +22,7 @@ func newTagCmd() *cobra.Command {
 			if err := saveConfig(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("Tagged %q with %v\n", args[0], args[1:])
+			fmt.Fprintf(cmd.OutOrStdout(), "Tagged %q with %v\n", args[0], args[1:])
 			return nil
 		},
 	}
@@ -44,7 +44,7 @@ func newUntagCmd() *cobra.Command {
 			if err := saveConfig(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("Untagged %q: removed %v\n", args[0], args[1:])
+			fmt.Fprintf(cmd.OutOrStdout(), "Untagged %q: removed %v\n", args[0], args[1:])
 			return nil
 		},
 	}

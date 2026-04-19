@@ -51,13 +51,12 @@ func TestResolveTargets(t *testing.T) {
 }
 
 func TestFormatLine(t *testing.T) {
-	line := FormatLine("prod-1", "\033[31m", "some output", true)
+	line := FormatLine("prod-1", "\033[31m", "some output", true, 15)
 	if line == "" {
 		t.Fatal("expected non-empty formatted line")
 	}
 
-	// Without border
-	line2 := FormatLine("prod-1", "\033[31m", "some output", false)
+	line2 := FormatLine("prod-1", "\033[31m", "some output", false, 15)
 	if line2 != "some output" {
 		t.Fatalf("expected raw output without border, got: %s", line2)
 	}

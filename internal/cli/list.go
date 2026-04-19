@@ -24,8 +24,10 @@ func newListCmd() *cobra.Command {
 				conns = cfg.FilterByTag(tag)
 			}
 
+			out := cmd.OutOrStdout()
+
 			if len(conns) == 0 {
-				fmt.Println("No connections found.")
+				fmt.Fprintln(out, "No connections found.")
 				return nil
 			}
 
@@ -34,7 +36,7 @@ func newListCmd() *cobra.Command {
 				if len(c.Tags) > 0 {
 					tags = " [" + strings.Join(c.Tags, ", ") + "]"
 				}
-				fmt.Printf("  %s — %s@%s:%d%s\n", c.Name, c.User, c.Host, c.Port, tags)
+				fmt.Fprintf(out, "  %s — %s@%s:%d%s\n", c.Name, c.User, c.Host, c.Port, tags)
 			}
 			return nil
 		},

@@ -39,7 +39,7 @@ func newAddCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Added connection %q\n", args[0])
+			fmt.Fprintf(cmd.OutOrStdout(), "Added connection %q\n", args[0])
 			return nil
 		},
 	}
