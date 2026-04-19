@@ -70,7 +70,7 @@ type Model struct {
 	filterText       string
 	filtering        bool
 	collapsed        map[string]bool // collapsed group state
-	cutConnection    string          // name of connection being moved (cut/paste)
+	cutConnections   map[string]bool // names of connections being moved (cut/paste)
 	groupNameInput   string          // input for new group name
 	quitting         bool
 	form             formMode
@@ -100,6 +100,7 @@ func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDi
 		focus:            focusSidebar,
 		sshConfigChanged: sshChanged,
 		collapsed:        make(map[string]bool),
+		cutConnections:   make(map[string]bool),
 	}
 }
 
@@ -254,29 +255,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.groupNameInput = ""
 			m.formError = ""
 		case "x":
-			// Cut connection
+			// Toggle cut on connection
 			c := m.selectedConnection()
 			if c != nil {
-				m.cutConnection = c.Name
+				if m.cutConnections[c.Name] {
+					delete(m.cutConnections, c.Name)
+				} else {
+					m.cutConnections[c.Name] = true
+				}
 			}
 		case "y":
-			// Paste connection into group
-			if m.cutConnection != "" {
-				c, err := m.cfg.FindByName(m.cutConnection)
-				if err == nil {
-					items := m.sidebarItems()
-					targetGroup := ""
-					if m.cursor < len(items) {
-						if items[m.cursor].isGroup {
-							targetGroup = items[m.cursor].group
-						} else if items[m.cursor].conn != nil {
-							targetGroup = items[m.cursor].conn.Group
-						}
+			// Paste all cut connections into group at cursor
+			if len(m.cutConnections) > 0 {
+				items := m.sidebarItems()
+				targetGroup := ""
+				if m.cursor < len(items) {
+					if items[m.cursor].isGroup {
+						targetGroup = items[m.cursor].group
+					} else if items[m.cursor].conn != nil {
+						targetGroup = items[m.cursor].conn.Group
 					}
-					c.Group = targetGroup
-					config.Save(m.configDir, m.cfg)
 				}
-				m.cutConnection = ""
+				for name := range m.cutConnections {
+					c, err := m.cfg.FindByName(name)
+					if err == nil {
+						c.Group = targetGroup
+					}
+				}
+				config.Save(m.configDir, m.cfg)
+				m.cutConnections = make(map[string]bool)
 			}
 		case "t":
 			c := m.selectedConnection()
@@ -526,7 +533,7 @@ func (m Model) renderSidebar() string {
 				indent = "    "
 			}
 			cutMark := ""
-			if m.cutConnection == item.conn.Name {
+			if m.cutConnections[item.conn.Name] {
 				cutMark = dimStyle.Render(" ~")
 			}
 			if isCursor {
