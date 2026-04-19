@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/creack/pty"
@@ -14,33 +16,34 @@ import (
 
 // Session represents an active SSH connection running inside a PTY.
 type Session struct {
-	Name    string
-	conn    *config.Connection
-	cmd     *exec.Cmd
-	ptmx    *os.File
-	output  []byte
-	mu      sync.Mutex
-	active  bool
-	cleanup func()
+	Name         string
+	conn         *config.Connection
+	cmd          *exec.Cmd
+	ptmx         *os.File
+	output       []byte
+	mu           sync.Mutex
+	active       bool
+	password     string
+	passwordSent bool
 }
 
 // NewSession starts an SSH session in a PTY for the given connection.
 func NewSession(conn *config.Connection, jumpHost *config.Connection) (*Session, error) {
-	cmd, cleanup := sshpkg.PrepareCommand(conn, jumpHost)
+	args := sshpkg.BuildSSHArgs(conn, jumpHost)
+	cmd := exec.Command("ssh", args...)
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
-		cleanup()
 		return nil, fmt.Errorf("starting pty: %w", err)
 	}
 
 	s := &Session{
-		Name:    conn.Name,
-		conn:    conn,
-		cmd:     cmd,
-		ptmx:    ptmx,
-		active:  true,
-		cleanup: cleanup,
+		Name:     conn.Name,
+		conn:     conn,
+		cmd:      cmd,
+		ptmx:     ptmx,
+		active:   true,
+		password: sshpkg.GetStoredPassword(conn.Name),
 	}
 
 	go s.readOutput()
@@ -59,11 +62,19 @@ func (s *Session) readOutput() {
 			if len(s.output) > 65536 {
 				s.output = s.output[len(s.output)-65536:]
 			}
+
+			// Auto-type password when prompt is detected
+			if s.password != "" && !s.passwordSent {
+				if detectPasswordPrompt(s.output) {
+					s.ptmx.Write([]byte(s.password + "\r"))
+					s.passwordSent = true
+				}
+			}
+
 			s.mu.Unlock()
 		}
 		if err != nil {
 			if err != io.EOF {
-				// log silently
 				_ = err
 			}
 			s.mu.Lock()
@@ -72,6 +83,20 @@ func (s *Session) readOutput() {
 			return
 		}
 	}
+}
+
+// detectPasswordPrompt checks if the output ends with a password prompt.
+func detectPasswordPrompt(output []byte) bool {
+	// Look at the last 100 bytes for the prompt
+	tail := output
+	if len(tail) > 100 {
+		tail = tail[len(tail)-100:]
+	}
+	lower := bytes.ToLower(tail)
+	trimmed := bytes.TrimRight(lower, " ")
+	return bytes.HasSuffix(trimmed, []byte("password:")) ||
+		bytes.HasSuffix(trimmed, []byte("password: ")) ||
+		strings.HasSuffix(string(trimmed), "'s password:")
 }
 
 // Write sends data to the session's PTY.
@@ -93,9 +118,6 @@ func (s *Session) Close() {
 	if s.cmd.Process != nil {
 		s.cmd.Process.Kill()
 		s.cmd.Wait() //nolint:errcheck
-	}
-	if s.cleanup != nil {
-		s.cleanup()
 	}
 	s.mu.Lock()
 	s.active = false
