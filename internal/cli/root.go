@@ -34,7 +34,7 @@ func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "hangar",
 		Short: "Terminal SSH manager",
-		Long:  "Hangar is a terminal SSH manager with TUI dashboard, session management, and fleet execution.",
+		Long:  "Hangar is a terminal SSH connection manager with a TUI dashboard.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
@@ -68,7 +68,6 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newSyncCmd())
 	root.AddCommand(newTagCmd())
 	root.AddCommand(newUntagCmd())
-	root.AddCommand(newExecCmd())
 
 	return root
 }

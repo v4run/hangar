@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/v4run/hangar/internal/config"
-	"github.com/v4run/hangar/internal/fleet"
 	sshauth "github.com/v4run/hangar/internal/ssh"
 )
 
@@ -53,12 +52,8 @@ type Model struct {
 	sshConfigChanged bool
 	filterText       string
 	filtering        bool
-	quitting    bool
-	execMode    bool // true when in exec input mode
-	execInput        string   // the command being typed
-	execOutput       []string // output lines from fleet exec
-	execRunning      bool     // true while exec is in progress
-	form             formMode
+	quitting bool
+	form     formMode
 	formFields       []string // field values: [name, host, port, user, key, jump, tags]
 	formCursor       int      // which field is focused (0-6)
 	formError        string   // validation error message
@@ -102,11 +97,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case execResultMsg:
-		m.execOutput = msg.lines
-		m.execRunning = false
-		return m, nil
-
 	case tea.KeyMsg:
 		// Form input handling (add/edit/delete/tag)
 		if m.form == formAdd || m.form == formEdit {
@@ -117,43 +107,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.form == formTag {
 			return m.handleTagInput(msg)
-		}
-
-		// Exec input mode
-		if m.execMode && !m.execRunning {
-			switch msg.String() {
-			case "esc":
-				m.execMode = false
-				m.execInput = ""
-				m.execOutput = nil
-			case "enter":
-				if m.execInput != "" {
-					m.execRunning = true
-					return m, m.startExec()
-				}
-			case "backspace":
-				if len(m.execInput) > 0 {
-					m.execInput = m.execInput[:len(m.execInput)-1]
-				}
-			default:
-				if len(msg.String()) == 1 {
-					m.execInput += msg.String()
-				}
-			}
-			return m, nil
-		}
-
-		// Exec mode showing results — only esc to close
-		if m.execMode && m.execRunning {
-			return m, nil
-		}
-		if m.execMode && len(m.execOutput) > 0 {
-			if msg.String() == "esc" {
-				m.execMode = false
-				m.execInput = ""
-				m.execOutput = nil
-			}
-			return m, nil
 		}
 
 		// Filtering mode
@@ -182,10 +135,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.sshConfigChanged {
 				return m, m.doSync()
 			}
-		case "e":
-			m.execMode = true
-			m.execInput = ""
-			m.execOutput = nil
 		case "a":
 			m.form = formAdd
 			m.formFields = []string{"", "", "22", "", "", "", "", ""}
@@ -376,15 +325,7 @@ func (m Model) renderStatusBar() string {
 	if m.form == formTag {
 		return statusBarStyle.Render(" TAG: [Enter]save [Esc]cancel  prefix with - to remove")
 	}
-	if m.execMode {
-		if m.execRunning {
-			return statusBarStyle.Render(" EXEC: running...")
-		} else if len(m.execOutput) > 0 {
-			return statusBarStyle.Render(" EXEC: complete  [esc]close")
-		}
-		return statusBarStyle.Render(" EXEC: type command, [enter]run [esc]cancel")
-	}
-	return statusBarStyle.Render(" [a]dd [enter]edit [x]del [c]onnect [e]xec [s]ync [t]ag [/]find [q]uit")
+	return statusBarStyle.Render(" [a]dd [enter]edit [x]del [c]onnect [s]ync [t]ag [/]find [q]uit")
 }
 
 func (m Model) renderSidebar() string {
@@ -430,23 +371,6 @@ func (m Model) renderMainPane() string {
 	// Tag input
 	if m.form == formTag {
 		return m.renderTagInput()
-	}
-
-	// Show exec mode
-	if m.execMode {
-		var b strings.Builder
-		if m.execRunning {
-			b.WriteString("Running: " + m.execInput + "...\n\n")
-		} else if len(m.execOutput) > 0 {
-			b.WriteString("Exec: " + m.execInput + "\n\n")
-			for _, line := range m.execOutput {
-				b.WriteString(line + "\n")
-			}
-		} else {
-			b.WriteString("Exec> " + m.execInput + "_\n\n")
-			b.WriteString("Press Enter to run, Esc to cancel\n")
-		}
-		return b.String()
 	}
 
 	// Show connection details
@@ -730,46 +654,6 @@ type syncResultMsg struct {
 	added   int
 	updated int
 	err     error
-}
-
-type execResultMsg struct {
-	lines []string
-}
-
-func (m Model) startExec() tea.Cmd {
-	targets := make([]config.Connection, len(m.cfg.Connections))
-	copy(targets, m.cfg.Connections)
-	command := m.execInput
-	cfg := m.cfg // capture for fleet.Execute
-
-	return func() tea.Msg {
-		if len(targets) == 0 {
-			return execResultMsg{lines: []string{"No targets"}}
-		}
-
-		serverNames := make([]string, len(targets))
-		for i, t := range targets {
-			serverNames[i] = t.Name
-		}
-		colors := fleet.AssignColors(serverNames)
-		nameWidth := fleet.MaxNameWidth(serverNames)
-
-		output := make(chan fleet.Result, 100)
-		go fleet.Execute(targets, command, output, cfg)
-
-		var lines []string
-		for result := range output {
-			if result.Err != nil {
-				lines = append(lines, fleet.FormatLine(result.Server, colors[result.Server],
-					fmt.Sprintf("ERROR: %v", result.Err), true, nameWidth))
-			} else {
-				lines = append(lines, fleet.FormatLine(result.Server, colors[result.Server],
-					result.Line, true, nameWidth))
-			}
-		}
-
-		return execResultMsg{lines: lines}
-	}
 }
 
 func Run(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDir string, sshChanged bool) error {
