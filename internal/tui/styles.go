@@ -32,4 +32,7 @@ var (
 	sectionHeaderStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("245")).
 		Bold(true)
+
+	errorStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("196"))
 )

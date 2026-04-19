@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,29 @@ const (
 	focusSidebar focus = iota
 	focusSession
 )
+
+type formMode int
+
+const (
+	formNone formMode = iota
+	formAdd
+	formEdit
+	formDelete
+	formTag
+)
+
+const (
+	fieldName = iota
+	fieldHost
+	fieldPort
+	fieldUser
+	fieldKey
+	fieldJump
+	fieldTags
+	fieldCount
+)
+
+var fieldLabels = []string{"Name", "Host", "Port", "User", "Key", "Jump", "Tags"}
 
 type Model struct {
 	cfg              *config.HangarConfig
@@ -38,6 +62,12 @@ type Model struct {
 	execInput        string   // the command being typed
 	execOutput       []string // output lines from fleet exec
 	execRunning      bool     // true while exec is in progress
+	form             formMode
+	formFields       []string // field values: [name, host, port, user, key, jump, tags]
+	formCursor       int      // which field is focused (0-6)
+	formError        string   // validation error message
+	formTarget       string   // connection name being edited/deleted/tagged
+	tagInput         string   // input for tag mode
 }
 
 type tickMsg struct{}
@@ -154,6 +184,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Form input handling (add/edit/delete/tag)
+		if m.form == formAdd || m.form == formEdit {
+			return m.handleFormInput(msg)
+		}
+		if m.form == formDelete {
+			return m.handleDeleteConfirm(msg)
+		}
+		if m.form == formTag {
+			return m.handleTagInput(msg)
+		}
+
 		// Exec input mode
 		if m.execMode && !m.execRunning {
 			switch msg.String() {
@@ -225,6 +266,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.execMode = true
 			m.execInput = ""
 			m.execOutput = nil
+		case "a":
+			m.form = formAdd
+			m.formFields = []string{"", "", "22", "", "", "", ""}
+			m.formCursor = 0
+			m.formError = ""
+		case "enter":
+			conns := m.filteredConnections()
+			if m.cursor < len(conns) {
+				c := conns[m.cursor]
+				m.form = formEdit
+				m.formTarget = c.Name
+				m.formFields = []string{
+					c.Name, c.Host, fmt.Sprintf("%d", c.Port), c.User,
+					c.IdentityFile, c.JumpHost, strings.Join(c.Tags, ", "),
+				}
+				m.formCursor = 1 // skip name field for edit
+				m.formError = ""
+			}
+		case "x":
+			conns := m.filteredConnections()
+			if m.cursor < len(conns) {
+				m.form = formDelete
+				m.formTarget = conns[m.cursor].Name
+			}
+		case "t":
+			conns := m.filteredConnections()
+			if m.cursor < len(conns) {
+				m.form = formTag
+				m.formTarget = conns[m.cursor].Name
+				m.tagInput = ""
+			}
 		case "c":
 			// Connect to highlighted connection
 			conns := m.filteredConnections()
@@ -439,6 +511,15 @@ func (m Model) View() string {
 }
 
 func (m Model) renderStatusBar() string {
+	if m.form == formAdd || m.form == formEdit {
+		return statusBarStyle.Render(" FORM: [Tab]next [Shift+Tab]prev [Enter]save [Esc]cancel")
+	}
+	if m.form == formDelete {
+		return statusBarStyle.Render(" DELETE: [y]confirm [n/Esc]cancel")
+	}
+	if m.form == formTag {
+		return statusBarStyle.Render(" TAG: [Enter]save [Esc]cancel  prefix with - to remove")
+	}
 	if m.hangarMode {
 		return statusBarStyle.Render(" HANGAR MODE: [j/k]navigate [enter]switch [d]disconnect [esc]back")
 	}
@@ -453,7 +534,7 @@ func (m Model) renderStatusBar() string {
 	if m.focus == focusSession {
 		return statusBarStyle.Render(" SESSION: Ctrl+a for hangar mode")
 	}
-	return statusBarStyle.Render(" [c]onnect [d]isconnect [e]xec [s]ync [t]ag [/]find  [q]uit")
+	return statusBarStyle.Render(" [a]dd [enter]edit [x]del [c]onnect [e]xec [s]ync [t]ag [/]find [q]uit")
 }
 
 func (m Model) renderSidebar() string {
@@ -507,6 +588,21 @@ func (m Model) renderSidebar() string {
 }
 
 func (m Model) renderMainPane() string {
+	// Form mode (add/edit)
+	if m.form == formAdd || m.form == formEdit {
+		return m.renderForm()
+	}
+
+	// Delete confirmation
+	if m.form == formDelete {
+		return m.renderDeleteConfirm()
+	}
+
+	// Tag input
+	if m.form == formTag {
+		return m.renderTagInput()
+	}
+
 	// Show exec mode
 	if m.execMode {
 		var b strings.Builder
@@ -582,6 +678,229 @@ func (m Model) renderMainPane() string {
 	if c.SyncedFromSSHConfig {
 		b.WriteString("  Source: synced from SSH config\n")
 	}
+
+	return b.String()
+}
+
+func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form = formNone
+	case "tab", "down":
+		m.formCursor = (m.formCursor + 1) % fieldCount
+		if m.form == formEdit && m.formCursor == fieldName {
+			m.formCursor = fieldHost
+		}
+	case "shift+tab", "up":
+		m.formCursor = (m.formCursor - 1 + fieldCount) % fieldCount
+		if m.form == formEdit && m.formCursor == fieldName {
+			m.formCursor = fieldTags
+		}
+	case "enter":
+		return m.saveForm()
+	case "backspace":
+		if len(m.formFields[m.formCursor]) > 0 {
+			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
+		}
+	default:
+		if len(msg.String()) == 1 {
+			m.formFields[m.formCursor] += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m Model) saveForm() (tea.Model, tea.Cmd) {
+	name := strings.TrimSpace(m.formFields[fieldName])
+	host := strings.TrimSpace(m.formFields[fieldHost])
+	portStr := strings.TrimSpace(m.formFields[fieldPort])
+	user := strings.TrimSpace(m.formFields[fieldUser])
+	key := strings.TrimSpace(m.formFields[fieldKey])
+	jump := strings.TrimSpace(m.formFields[fieldJump])
+	tagsStr := strings.TrimSpace(m.formFields[fieldTags])
+
+	// Validate
+	if name == "" {
+		m.formError = "Name is required"
+		return m, nil
+	}
+	if host == "" {
+		m.formError = "Host is required"
+		return m, nil
+	}
+	if user == "" {
+		m.formError = "User is required"
+		return m, nil
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 {
+		m.formError = "Port must be a positive number"
+		return m, nil
+	}
+
+	// Parse tags
+	var tags []string
+	if tagsStr != "" {
+		for _, t := range strings.Split(tagsStr, ",") {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				tags = append(tags, t)
+			}
+		}
+	}
+
+	conn := config.Connection{
+		Name:         name,
+		Host:         host,
+		Port:         port,
+		User:         user,
+		IdentityFile: key,
+		JumpHost:     jump,
+		Tags:         tags,
+	}
+
+	if m.form == formAdd {
+		if err := m.cfg.Add(conn); err != nil {
+			m.formError = err.Error()
+			return m, nil
+		}
+	} else if m.form == formEdit {
+		m.cfg.Remove(m.formTarget)
+		conn.Name = m.formTarget // keep original name
+		m.cfg.Connections = append(m.cfg.Connections, conn)
+	}
+
+	// Save to disk
+	if err := config.Save(m.configDir, m.cfg); err != nil {
+		m.formError = "Save failed: " + err.Error()
+		return m, nil
+	}
+
+	m.form = formNone
+	m.formError = ""
+	return m, nil
+}
+
+func (m Model) handleDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m.cfg.Remove(m.formTarget)
+		config.Save(m.configDir, m.cfg)
+		if m.cursor >= len(m.cfg.Connections) && m.cursor > 0 {
+			m.cursor--
+		}
+		m.form = formNone
+	case "n", "N", "esc":
+		m.form = formNone
+	}
+	return m, nil
+}
+
+func (m Model) handleTagInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form = formNone
+	case "enter":
+		if m.tagInput != "" {
+			var toAdd, toRemove []string
+			for _, t := range strings.Split(m.tagInput, ",") {
+				t = strings.TrimSpace(t)
+				if t == "" {
+					continue
+				}
+				if strings.HasPrefix(t, "-") {
+					toRemove = append(toRemove, t[1:])
+				} else {
+					toAdd = append(toAdd, t)
+				}
+			}
+			if len(toAdd) > 0 {
+				m.cfg.AddTags(m.formTarget, toAdd)
+			}
+			if len(toRemove) > 0 {
+				m.cfg.RemoveTags(m.formTarget, toRemove)
+			}
+			config.Save(m.configDir, m.cfg)
+		}
+		m.form = formNone
+	case "backspace":
+		if len(m.tagInput) > 0 {
+			m.tagInput = m.tagInput[:len(m.tagInput)-1]
+		}
+	default:
+		if len(msg.String()) == 1 {
+			m.tagInput += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m Model) renderForm() string {
+	var b strings.Builder
+	title := "Add Connection"
+	if m.form == formEdit {
+		title = "Edit Connection"
+	}
+	b.WriteString(selectedStyle.Render(title))
+	b.WriteString("\n\n")
+
+	for i := 0; i < fieldCount; i++ {
+		label := fmt.Sprintf("  %s: ", fieldLabels[i])
+		value := m.formFields[i]
+
+		if i == m.formCursor {
+			b.WriteString(selectedStyle.Render(label))
+			b.WriteString(value + "_")
+		} else {
+			if m.form == formEdit && i == fieldName {
+				b.WriteString(normalStyle.Render(label + value + " (read-only)"))
+			} else {
+				b.WriteString(normalStyle.Render(label + value))
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	if m.formError != "" {
+		b.WriteString("\n")
+		b.WriteString(errorStyle.Render("  Error: " + m.formError))
+	}
+
+	b.WriteString("\n\n")
+	b.WriteString(normalStyle.Render("  [Tab] next field  [Shift+Tab] prev  [Enter] save  [Esc] cancel"))
+
+	return b.String()
+}
+
+func (m Model) renderDeleteConfirm() string {
+	var b strings.Builder
+	b.WriteString(selectedStyle.Render("Delete Connection"))
+	b.WriteString("\n\n")
+	b.WriteString(fmt.Sprintf("  Remove %q?\n\n", m.formTarget))
+	b.WriteString(normalStyle.Render("  [y] yes  [n/Esc] cancel"))
+	return b.String()
+}
+
+func (m Model) renderTagInput() string {
+	var b strings.Builder
+	b.WriteString(selectedStyle.Render("Manage Tags"))
+	b.WriteString("\n\n")
+
+	// Show current tags
+	c, err := m.cfg.FindByName(m.formTarget)
+	if err == nil {
+		if len(c.Tags) > 0 {
+			b.WriteString(fmt.Sprintf("  Current: %s\n\n", strings.Join(c.Tags, ", ")))
+		} else {
+			b.WriteString("  Current: (none)\n\n")
+		}
+	}
+
+	b.WriteString(fmt.Sprintf("  Tags: %s_\n", m.tagInput))
+	b.WriteString("\n")
+	b.WriteString(normalStyle.Render("  Comma-separated. Prefix with - to remove (e.g. -api)"))
+	b.WriteString("\n")
+	b.WriteString(normalStyle.Render("  [Enter] save  [Esc] cancel"))
 
 	return b.String()
 }
