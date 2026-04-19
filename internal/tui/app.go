@@ -492,6 +492,7 @@ func (m Model) renderSidebar() string {
 	}
 	b.WriteString("\n\n")
 
+	conns := m.filteredConnections()
 	items := m.sidebarItems()
 	if len(items) == 0 {
 		b.WriteString(dimStyle.Render("  no connections"))
@@ -502,14 +503,22 @@ func (m Model) renderSidebar() string {
 		isCursor := m.focus == focusSidebar && i == m.cursor
 
 		if item.isGroup {
-			arrow := "▸"
-			if !m.collapsed[item.group] {
-				arrow = "▾"
+			arrow := "▾"
+			count := ""
+			if m.collapsed[item.group] {
+				arrow = "▸"
+				n := 0
+				for _, c := range conns {
+					if c.Group == item.group {
+						n++
+					}
+				}
+				count = dimStyle.Render(fmt.Sprintf(" (%d)", n))
 			}
 			if isCursor {
-				b.WriteString(cursorStyle.Render("> ") + selectedStyle.Render(arrow+" "+item.group))
+				b.WriteString(cursorStyle.Render("> ") + selectedStyle.Render(arrow+" "+item.group) + count)
 			} else {
-				b.WriteString("  " + headerStyle.Render(arrow+" "+item.group))
+				b.WriteString("  " + headerStyle.Render(arrow+" "+item.group) + count)
 			}
 		} else {
 			indent := "  "
