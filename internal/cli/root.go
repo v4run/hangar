@@ -6,9 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/v4run/hangar/internal/config"
+	sshauth "github.com/v4run/hangar/internal/ssh"
 	"github.com/v4run/hangar/internal/tui"
 )
 
+// cfgDir is set by the --config persistent flag before any command runs.
+// It is safe because Cobra processes flags before invoking RunE.
 var cfgDir string
 
 func configDir() string {
@@ -45,11 +48,7 @@ func NewRootCmd() *cobra.Command {
 			// Check if SSH config changed
 			sshChanged := false
 			if gc.AutoSync {
-				sshPath := gc.SSHConfigPath
-				if sshPath == "~/.ssh/config" {
-					home, _ := os.UserHomeDir()
-					sshPath = filepath.Join(home, ".ssh", "config")
-				}
+				sshPath := sshauth.ExpandHome(gc.SSHConfigPath)
 				changed, err := cfg.NeedsSync(sshPath)
 				if err == nil {
 					sshChanged = changed

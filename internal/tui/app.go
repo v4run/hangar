@@ -2,8 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/v4run/hangar/internal/config"
 	"github.com/v4run/hangar/internal/fleet"
+	sshauth "github.com/v4run/hangar/internal/ssh"
 )
 
 type focus int
@@ -88,7 +87,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case syncResultMsg:
 		if msg.err == nil {
+			m.cfg = msg.cfg
 			m.sshConfigChanged = false
+			// Reset cursor if it's out of bounds
+			if m.cursor >= len(m.cfg.Connections) {
+				m.cursor = 0
+			}
 		}
 
 	case execResultMsg:
@@ -359,27 +363,30 @@ func (m Model) filteredConnections() []config.Connection {
 }
 
 func (m Model) doSync() tea.Cmd {
+	configDir := m.configDir // capture into local var
 	return func() tea.Msg {
-		gc, err := config.LoadGlobal(m.configDir)
+		cfg, err := config.Load(configDir)
 		if err != nil {
 			return syncResultMsg{err: err}
 		}
 
-		sshPath := gc.SSHConfigPath
-		if sshPath == "~/.ssh/config" {
-			home, _ := os.UserHomeDir()
-			sshPath = filepath.Join(home, ".ssh", "config")
-		}
-
-		added, updated, err := m.cfg.SyncFromSSHConfig(sshPath)
+		gc, err := config.LoadGlobal(configDir)
 		if err != nil {
 			return syncResultMsg{err: err}
 		}
 
-		// Save updated config
-		config.Save(m.configDir, m.cfg)
+		sshPath := sshauth.ExpandHome(gc.SSHConfigPath)
 
-		return syncResultMsg{added: added, updated: updated}
+		added, updated, err := cfg.SyncFromSSHConfig(sshPath)
+		if err != nil {
+			return syncResultMsg{err: err}
+		}
+
+		if err := config.Save(configDir, cfg); err != nil {
+			return syncResultMsg{err: err}
+		}
+
+		return syncResultMsg{cfg: cfg, added: added, updated: updated}
 	}
 }
 
@@ -580,6 +587,7 @@ func (m Model) renderMainPane() string {
 }
 
 type syncResultMsg struct {
+	cfg     *config.HangarConfig
 	added   int
 	updated int
 	err     error
@@ -590,22 +598,26 @@ type execResultMsg struct {
 }
 
 func (m Model) startExec() tea.Cmd {
+	targets := make([]config.Connection, len(m.cfg.Connections))
+	copy(targets, m.cfg.Connections)
+	command := m.execInput
+	cfg := m.cfg // capture for fleet.Execute
+
 	return func() tea.Msg {
-		targets := m.cfg.Connections
 		if len(targets) == 0 {
-			return execResultMsg{lines: []string{"No connections configured."}}
+			return execResultMsg{lines: []string{"No targets"}}
 		}
 
-		output := make(chan fleet.Result, 100)
-		go fleet.Execute(targets, m.execInput, output, m.cfg)
-
-		var lines []string
 		serverNames := make([]string, len(targets))
 		for i, t := range targets {
 			serverNames[i] = t.Name
 		}
 		colors := fleet.AssignColors(serverNames)
 
+		output := make(chan fleet.Result, 100)
+		go fleet.Execute(targets, command, output, cfg)
+
+		var lines []string
 		for result := range output {
 			if result.Err != nil {
 				lines = append(lines, fleet.FormatLine(result.Server, colors[result.Server],

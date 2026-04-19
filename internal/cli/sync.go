@@ -2,11 +2,10 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/v4run/hangar/internal/config"
+	sshauth "github.com/v4run/hangar/internal/ssh"
 )
 
 func newSyncCmd() *cobra.Command {
@@ -24,11 +23,7 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			sshPath := gc.SSHConfigPath
-			if sshPath == "~/.ssh/config" {
-				home, _ := os.UserHomeDir()
-				sshPath = filepath.Join(home, ".ssh", "config")
-			}
+			sshPath := sshauth.ExpandHome(gc.SSHConfigPath)
 
 			added, updated, err := cfg.SyncFromSSHConfig(sshPath)
 			if err != nil {
