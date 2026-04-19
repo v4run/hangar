@@ -5,15 +5,11 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"net"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/v4run/hangar/internal/config"
+	sshauth "github.com/v4run/hangar/internal/ssh"
 	gossh "golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 )
 
 func ResolveTargets(cfg *config.HangarConfig, tag string, names []string) []config.Connection {
@@ -67,7 +63,7 @@ func executeOnServer(conn config.Connection, command string, output chan<- Resul
 	sshConfig := &gossh.ClientConfig{
 		User:            conn.User,
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
-		Auth:            buildAuthMethods(conn),
+		Auth:            sshauth.BuildAuthMethods(&conn),
 	}
 
 	addr := fmt.Sprintf("%s:%d", conn.Host, conn.Port)
@@ -122,62 +118,6 @@ func executeOnServer(conn config.Connection, command string, output chan<- Resul
 	return session.Wait()
 }
 
-func buildAuthMethods(conn config.Connection) []gossh.AuthMethod {
-	var methods []gossh.AuthMethod
-
-	if agentAuth := sshAgentAuth(); agentAuth != nil {
-		methods = append(methods, agentAuth)
-	}
-
-	if conn.IdentityFile != "" {
-		if keyAuth := publicKeyAuth(conn.IdentityFile); keyAuth != nil {
-			methods = append(methods, keyAuth)
-		}
-	}
-
-	if pass, err := config.GetPassword(conn.Name); err == nil && pass != "" {
-		methods = append(methods, gossh.Password(pass))
-	}
-
-	return methods
-}
-
-func sshAgentAuth() gossh.AuthMethod {
-	sock := os.Getenv("SSH_AUTH_SOCK")
-	if sock == "" {
-		return nil
-	}
-	conn, err := net.Dial("unix", sock)
-	if err != nil {
-		return nil
-	}
-	return gossh.PublicKeysCallback(agent.NewClient(conn).Signers)
-}
-
-func publicKeyAuth(keyPath string) gossh.AuthMethod {
-	path := expandHome(keyPath)
-	key, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	signer, err := gossh.ParsePrivateKey(key)
-	if err != nil {
-		return nil
-	}
-	return gossh.PublicKeys(signer)
-}
-
-func expandHome(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(home, path[2:])
-	}
-	return path
-}
-
 func dialViaJumpHost(conn config.Connection, targetAddr string, targetConfig *gossh.ClientConfig, cfg *config.HangarConfig) (*gossh.Client, error) {
 	jump, err := cfg.FindByName(conn.JumpHost)
 	if err != nil {
@@ -187,7 +127,7 @@ func dialViaJumpHost(conn config.Connection, targetAddr string, targetConfig *go
 	jumpConfig := &gossh.ClientConfig{
 		User:            jump.User,
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
-		Auth:            buildAuthMethods(*jump),
+		Auth:            sshauth.BuildAuthMethods(jump),
 	}
 
 	jumpAddr := fmt.Sprintf("%s:%d", jump.Host, jump.Port)
