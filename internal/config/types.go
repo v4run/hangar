@@ -2,6 +2,11 @@ package config
 
 import "time"
 
+type Script struct {
+	Name    string `yaml:"name"`
+	Command string `yaml:"command"`
+}
+
 type Connection struct {
 	Name                string   `yaml:"name"`
 	Host                string   `yaml:"host"`
@@ -11,6 +16,8 @@ type Connection struct {
 	Tags                []string `yaml:"tags,omitempty"`
 	JumpHost            string   `yaml:"jump_host,omitempty"`
 	SyncedFromSSHConfig bool     `yaml:"synced_from_ssh_config"`
+	Scripts             []Script `yaml:"scripts,omitempty"`
+	Notes               string   `yaml:"notes,omitempty"`
 }
 
 type SSHSync struct {
@@ -19,8 +26,9 @@ type SSHSync struct {
 }
 
 type HangarConfig struct {
-	Connections []Connection `yaml:"connections"`
-	SSHSync     SSHSync      `yaml:"ssh_sync"`
+	Connections   []Connection `yaml:"connections"`
+	SSHSync       SSHSync      `yaml:"ssh_sync"`
+	GlobalScripts []Script     `yaml:"global_scripts,omitempty"`
 }
 
 type GlobalConfig struct {
