@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -610,8 +611,15 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						jumpHost = jh
 					}
 				}
-				cmd, cleanup := sshauth.NewSSHCommand(&conn, jumpHost)
-				cmd.Args = append(cmd.Args, script.Command)
+				sshCmd, cleanup := sshauth.NewSSHCommand(&conn, jumpHost)
+				sshCmd.Args = append(sshCmd.Args, script.Command)
+				// Build a shell command that runs SSH then waits for keypress
+				sshLine := strings.Join(sshCmd.Args, " ")
+				shellScript := sshLine + `; echo ""; echo "press any key to continue..."; read -n 1`
+				cmd := exec.Command("sh", "-c", shellScript)
+				if sshCmd.Env != nil {
+					cmd.Env = sshCmd.Env
+				}
 				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 					cleanup()
 					return sshExitMsg{err: err}
