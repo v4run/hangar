@@ -25,6 +25,7 @@ const (
 	formEdit
 	formDelete
 	formTag
+	formSync
 )
 
 const (
@@ -57,8 +58,11 @@ type Model struct {
 	formFields       []string // field values: [name, host, port, user, key, jump, tags]
 	formCursor       int      // which field is focused (0-6)
 	formError        string   // validation error message
-	formTarget       string   // connection name being edited/deleted/tagged
-	tagInput         string   // input for tag mode
+	formTarget       string              // connection name being edited/deleted/tagged
+	tagInput         string              // input for tag mode
+	syncEntries      []config.Connection // parsed SSH config entries for sync selection
+	syncSelected     []bool             // selection state per entry
+	syncCursor       int                // cursor position in sync list
 }
 
 type sshExitMsg struct{ err error }
@@ -87,16 +91,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// SSH session ended, back to TUI
 		return m, nil
 
-	case syncResultMsg:
-		if msg.err == nil {
-			m.cfg = msg.cfg
-			m.sshConfigChanged = false
-			// Reset cursor if it's out of bounds
-			if m.cursor >= len(m.cfg.Connections) {
-				m.cursor = 0
-			}
-		}
-
 	case tea.KeyMsg:
 		// Form input handling (add/edit/delete/tag)
 		if m.form == formAdd || m.form == formEdit {
@@ -107,6 +101,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.form == formTag {
 			return m.handleTagInput(msg)
+		}
+		if m.form == formSync {
+			return m.handleSyncInput(msg)
 		}
 
 		// Filtering mode
@@ -132,9 +129,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filtering = true
 			m.filterText = ""
 		case "s", "S":
-			if m.sshConfigChanged {
-				return m, m.doSync()
+			gc, err := config.LoadGlobal(m.configDir)
+			if err != nil {
+				break
 			}
+			sshPath := sshauth.ExpandHome(gc.SSHConfigPath)
+			entries, err := config.ParseSSHConfig(sshPath)
+			if err != nil || len(entries) == 0 {
+				break
+			}
+			// Mark entries already imported
+			m.syncEntries = entries
+			m.syncSelected = make([]bool, len(entries))
+			for i, e := range entries {
+				_, err := m.cfg.FindByName(e.Name)
+				if err != nil {
+					// Not yet imported — pre-select new entries
+					m.syncSelected[i] = true
+				}
+			}
+			m.syncCursor = 0
+			m.form = formSync
 		case "a":
 			m.form = formAdd
 			m.formFields = []string{"", "", "22", "", "", "", "", ""}
@@ -239,34 +254,6 @@ func (m Model) filteredConnections() []config.Connection {
 	return filtered
 }
 
-func (m Model) doSync() tea.Cmd {
-	configDir := m.configDir // capture into local var
-	return func() tea.Msg {
-		cfg, err := config.Load(configDir)
-		if err != nil {
-			return syncResultMsg{err: err}
-		}
-
-		gc, err := config.LoadGlobal(configDir)
-		if err != nil {
-			return syncResultMsg{err: err}
-		}
-
-		sshPath := sshauth.ExpandHome(gc.SSHConfigPath)
-
-		added, updated, err := cfg.SyncFromSSHConfig(sshPath)
-		if err != nil {
-			return syncResultMsg{err: err}
-		}
-
-		if err := config.Save(configDir, cfg); err != nil {
-			return syncResultMsg{err: err}
-		}
-
-		return syncResultMsg{cfg: cfg, added: added, updated: updated}
-	}
-}
-
 func (m Model) View() string {
 	if m.quitting {
 		return ""
@@ -325,6 +312,9 @@ func (m Model) renderStatusBar() string {
 	if m.form == formTag {
 		return statusBarStyle.Render(" TAG: [Enter]save [Esc]cancel  prefix with - to remove")
 	}
+	if m.form == formSync {
+		return statusBarStyle.Render(" SYNC: [space]toggle [a]ll [n]one [Enter]import [Esc]cancel")
+	}
 	return statusBarStyle.Render(" [a]dd [enter]edit [x]del [c]onnect [s]ync [t]ag [/]find [q]uit")
 }
 
@@ -371,6 +361,11 @@ func (m Model) renderMainPane() string {
 	// Tag input
 	if m.form == formTag {
 		return m.renderTagInput()
+	}
+
+	// Sync selection
+	if m.form == formSync {
+		return m.renderSyncList()
 	}
 
 	// Show connection details
@@ -573,6 +568,94 @@ func (m Model) handleTagInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleSyncInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form = formNone
+	case "j", "down":
+		if m.syncCursor < len(m.syncEntries)-1 {
+			m.syncCursor++
+		}
+	case "k", "up":
+		if m.syncCursor > 0 {
+			m.syncCursor--
+		}
+	case " ":
+		if m.syncCursor < len(m.syncSelected) {
+			m.syncSelected[m.syncCursor] = !m.syncSelected[m.syncCursor]
+		}
+	case "a":
+		for i := range m.syncSelected {
+			m.syncSelected[i] = true
+		}
+	case "n":
+		for i := range m.syncSelected {
+			m.syncSelected[i] = false
+		}
+	case "enter":
+		imported := 0
+		for i, entry := range m.syncEntries {
+			if !m.syncSelected[i] {
+				continue
+			}
+			existing, err := m.cfg.FindByName(entry.Name)
+			if err != nil {
+				// New entry — add it
+				m.cfg.Connections = append(m.cfg.Connections, entry)
+				imported++
+			} else if existing.SyncedFromSSHConfig {
+				// Update existing synced entry
+				existing.Host = entry.Host
+				existing.Port = entry.Port
+				existing.User = entry.User
+				existing.IdentityFile = entry.IdentityFile
+				existing.JumpHost = entry.JumpHost
+				imported++
+			}
+		}
+		config.Save(m.configDir, m.cfg)
+		m.sshConfigChanged = false
+		m.form = formNone
+	}
+	return m, nil
+}
+
+func (m Model) renderSyncList() string {
+	var b strings.Builder
+	b.WriteString(selectedStyle.Render("Import from SSH Config"))
+	b.WriteString("\n\n")
+
+	for i, entry := range m.syncEntries {
+		check := "[ ]"
+		if m.syncSelected[i] {
+			check = "[x]"
+		}
+
+		// Show if already imported
+		_, err := m.cfg.FindByName(entry.Name)
+		alreadyImported := err == nil
+
+		prefix := "  "
+		style := normalStyle
+		if i == m.syncCursor {
+			prefix = "> "
+			style = selectedStyle
+		}
+
+		label := fmt.Sprintf("%s %s  %s@%s:%d", check, entry.Name, entry.User, entry.Host, entry.Port)
+		if alreadyImported {
+			label += " (imported)"
+		}
+		b.WriteString(style.Render(prefix + label))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(normalStyle.Render("  [space] toggle  [a]ll  [n]one  [enter] import  [esc] cancel"))
+
+	return b.String()
+}
+
 func (m Model) renderForm() string {
 	var b strings.Builder
 	title := "Add Connection"
@@ -647,13 +730,6 @@ func (m Model) renderTagInput() string {
 	b.WriteString(normalStyle.Render("  [Enter] save  [Esc] cancel"))
 
 	return b.String()
-}
-
-type syncResultMsg struct {
-	cfg     *config.HangarConfig
-	added   int
-	updated int
-	err     error
 }
 
 func Run(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDir string, sshChanged bool) error {
