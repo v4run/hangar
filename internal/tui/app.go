@@ -612,10 +612,15 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 				sshCmd, cleanup := sshauth.NewSSHCommand(&conn, jumpHost)
-				sshCmd.Args = append(sshCmd.Args, script.Command)
-				// Build a shell command that runs SSH then waits for keypress
-				sshLine := strings.Join(sshCmd.Args, " ")
-				shellScript := sshLine + `; echo ""; echo "press any key to continue..."; read -n 1`
+				// Insert -t before user@host to force TTY allocation for interactive commands
+				sshCmd.Args = append(sshCmd.Args[:len(sshCmd.Args)-1], "-t", sshCmd.Args[len(sshCmd.Args)-1], script.Command)
+				// Wrap in shell to pause after execution
+				var quotedArgs []string
+				for _, a := range sshCmd.Args {
+					quotedArgs = append(quotedArgs, fmt.Sprintf("'%s'", strings.ReplaceAll(a, "'", "'\\''")))
+				}
+				sshLine := strings.Join(quotedArgs, " ")
+				shellScript := sshLine + `; printf "\npress any key to continue..."; read -n 1`
 				cmd := exec.Command("sh", "-c", shellScript)
 				if sshCmd.Env != nil {
 					cmd.Env = sshCmd.Env
