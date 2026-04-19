@@ -5,12 +5,30 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/v4run/hangar/internal/config"
 	sshauth "github.com/v4run/hangar/internal/ssh"
 	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+func hostKeyCallback() gossh.HostKeyCallback {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not determine home directory (%v), host key verification disabled\n", err)
+		return gossh.InsecureIgnoreHostKey()
+	}
+	knownHostsPath := filepath.Join(home, ".ssh", "known_hosts")
+	cb, err := knownhosts.New(knownHostsPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not load known_hosts (%v), host key verification disabled\n", err)
+		return gossh.InsecureIgnoreHostKey()
+	}
+	return cb
+}
 
 func ResolveTargets(cfg *config.HangarConfig, tag string, names []string) []config.Connection {
 	seen := make(map[string]bool)
@@ -62,24 +80,26 @@ func Execute(targets []config.Connection, command string, output chan<- Result, 
 func executeOnServer(conn config.Connection, command string, output chan<- Result, cfg *config.HangarConfig) error {
 	sshConfig := &gossh.ClientConfig{
 		User:            conn.User,
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback(),
 		Auth:            sshauth.BuildAuthMethods(&conn),
 	}
 
 	addr := fmt.Sprintf("%s:%d", conn.Host, conn.Port)
 
 	var client *gossh.Client
+	var cleanup func()
 	var err error
 
 	if conn.JumpHost != "" {
-		client, err = dialViaJumpHost(conn, addr, sshConfig, cfg)
+		client, cleanup, err = dialViaJumpHost(conn, addr, sshConfig, cfg)
 	} else {
 		client, err = gossh.Dial("tcp", addr, sshConfig)
+		cleanup = func() { client.Close() }
 	}
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
-	defer client.Close()
+	defer cleanup()
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -118,35 +138,42 @@ func executeOnServer(conn config.Connection, command string, output chan<- Resul
 	return session.Wait()
 }
 
-func dialViaJumpHost(conn config.Connection, targetAddr string, targetConfig *gossh.ClientConfig, cfg *config.HangarConfig) (*gossh.Client, error) {
+func dialViaJumpHost(conn config.Connection, targetAddr string, targetConfig *gossh.ClientConfig, cfg *config.HangarConfig) (*gossh.Client, func(), error) {
 	jump, err := cfg.FindByName(conn.JumpHost)
 	if err != nil {
-		return nil, fmt.Errorf("jump host %q: %w", conn.JumpHost, err)
+		return nil, nil, fmt.Errorf("jump host %q: %w", conn.JumpHost, err)
 	}
 
 	jumpConfig := &gossh.ClientConfig{
 		User:            jump.User,
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback(),
 		Auth:            sshauth.BuildAuthMethods(jump),
 	}
 
 	jumpAddr := fmt.Sprintf("%s:%d", jump.Host, jump.Port)
 	jumpClient, err := gossh.Dial("tcp", jumpAddr, jumpConfig)
 	if err != nil {
-		return nil, fmt.Errorf("jump host dial: %w", err)
+		return nil, nil, fmt.Errorf("jump host dial: %w", err)
 	}
 
 	netConn, err := jumpClient.Dial("tcp", targetAddr)
 	if err != nil {
 		jumpClient.Close()
-		return nil, fmt.Errorf("jump host tunnel: %w", err)
+		return nil, nil, fmt.Errorf("jump host tunnel: %w", err)
 	}
 
 	ncc, chans, reqs, err := gossh.NewClientConn(netConn, targetAddr, targetConfig)
 	if err != nil {
+		netConn.Close()
 		jumpClient.Close()
-		return nil, err
+		return nil, nil, err
 	}
 
-	return gossh.NewClient(ncc, chans, reqs), nil
+	client := gossh.NewClient(ncc, chans, reqs)
+	cleanup := func() {
+		client.Close()
+		netConn.Close()
+		jumpClient.Close()
+	}
+	return client, cleanup, nil
 }
