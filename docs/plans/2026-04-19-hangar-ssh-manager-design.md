@@ -7,6 +7,7 @@ Hangar is a terminal SSH manager built in Go that provides both a TUI dashboard 
 ## Architecture
 
 **Hybrid SSH approach:**
+
 - Interactive sessions: system `ssh` binary via PTY (full SSH compatibility)
 - Fleet execution: `golang.org/x/crypto/ssh` (programmatic control, concurrent connections)
 
@@ -26,6 +27,7 @@ hangar/
 ```
 
 **Key dependencies:**
+
 - `cobra` — CLI framework
 - `bubbletea` + `lipgloss` + `bubbles` — TUI framework
 - `golang.org/x/crypto/ssh` — Go SSH for fleet exec
@@ -38,13 +40,13 @@ Connections stored in `~/.hangar/connections.yaml`:
 
 ```yaml
 connections:
-  - name: prod-api-1           # unique identifier
+  - name: prod-api-1 # unique identifier
     host: 10.0.1.50
     port: 22
     user: deploy
     identity_file: ~/.ssh/id_ed25519
     tags: [production, api]
-    jump_host: bastion-prod    # references another connection by name
+    jump_host: bastion-prod # references another connection by name
     synced_from_ssh_config: false
 
   - name: bastion-prod
@@ -61,6 +63,7 @@ ssh_sync:
 ```
 
 **SSH config sync:**
+
 - On startup, hash `~/.ssh/config` and compare to `last_ssh_config_hash`
 - If changed, show indicator in TUI ("SSH config changed — press `S` to sync")
 - Sync imports new entries, updates changed ones, never deletes hangar-native entries
@@ -116,6 +119,7 @@ hangar untag <name> <tags...> # remove tags from a connection
 - **Top bar:** SSH config change indicator
 
 **Session switching:** `Ctrl+a` prefix key (configurable) enters "hangar mode":
+
 - `j/k` or arrows to navigate sidebar
 - `Enter` to switch to selected session
 - `c` to connect to selected server
@@ -143,6 +147,7 @@ hangar untag <name> <tags...> # remove tags from a connection
 ## Authentication
 
 **Auth methods tried in order:**
+
 1. SSH agent (`SSH_AUTH_SOCK`)
 2. Identity file from connection config
 3. Password from system keychain
@@ -151,6 +156,7 @@ hangar untag <name> <tags...> # remove tags from a connection
 **Password storage:** System keychain via `go-keyring` (macOS Keychain / Linux secret-service), keyed by connection name (e.g., `hangar:prod-api-1`). No credentials in config files.
 
 **Jump hosts / ProxyJump:**
+
 - Configured per-connection via `jump_host` field, referencing another connection by name
 - Supports chaining (jump host can itself have a jump host)
 - Interactive sessions: translated to `-J` flag for system `ssh`

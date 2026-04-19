@@ -103,33 +103,33 @@ Launch with `hangar` (no arguments).
 
 **Sidebar mode:**
 
-| Key | Action |
-|-----|--------|
-| `j` / `k` | Navigate connections |
-| `/` | Filter connections (by name or tag) |
-| `a` | Add new connection |
-| `Enter` | Edit selected connection |
-| `x` | Delete selected connection |
-| `t` | Manage tags (prefix with `-` to remove) |
-| `c` | Connect to selected server |
-| `e` | Execute command across servers |
-| `s` | Sync from SSH config |
-| `q` | Quit |
+| Key       | Action                                  |
+| --------- | --------------------------------------- |
+| `j` / `k` | Navigate connections                    |
+| `/`       | Filter connections (by name or tag)     |
+| `a`       | Add new connection                      |
+| `Enter`   | Edit selected connection                |
+| `x`       | Delete selected connection              |
+| `t`       | Manage tags (prefix with `-` to remove) |
+| `c`       | Connect to selected server              |
+| `e`       | Execute command across servers          |
+| `s`       | Sync from SSH config                    |
+| `q`       | Quit                                    |
 
 **Session mode** (inside an active SSH session):
 
-| Key | Action |
-|-----|--------|
+| Key      | Action                                  |
+| -------- | --------------------------------------- |
 | `Ctrl+a` | Enter hangar mode (escape from session) |
 
 **Hangar mode** (after `Ctrl+a`):
 
-| Key | Action |
-|-----|--------|
-| `j` / `k` | Navigate sessions |
-| `Enter` | Switch to selected session |
-| `d` | Disconnect current session |
-| `Esc` | Return to active session |
+| Key       | Action                     |
+| --------- | -------------------------- |
+| `j` / `k` | Navigate sessions          |
+| `Enter`   | Switch to selected session |
+| `d`       | Disconnect current session |
+| `Esc`     | Return to active session   |
 
 ## Fleet Execution
 
@@ -173,9 +173,9 @@ connections:
 Stored in `~/.hangar/config.yaml`:
 
 ```yaml
-prefix_key: ctrl+a           # TUI escape key (configurable)
+prefix_key: ctrl+a # TUI escape key (configurable)
 ssh_config_path: ~/.ssh/config
-auto_sync: true               # check for SSH config changes on startup
+auto_sync: true # check for SSH config changes on startup
 ```
 
 ## Authentication

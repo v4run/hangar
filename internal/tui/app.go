@@ -56,8 +56,8 @@ type Model struct {
 	filtering        bool
 	quitting         bool
 	sessions         []*Session
-	activeSession    int  // index into sessions, -1 if none
-	hangarMode       bool // true when prefix key (Ctrl+a) pressed
+	activeSession    int      // index into sessions, -1 if none
+	hangarMode       bool     // true when prefix key (Ctrl+a) pressed
 	execMode         bool     // true when in exec input mode
 	execInput        string   // the command being typed
 	execOutput       []string // output lines from fleet exec

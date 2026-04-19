@@ -13,6 +13,7 @@
 ### Task 1: Project Scaffolding & Go Module Init
 
 **Files:**
+
 - Create: `go.mod`
 - Create: `cmd/hangar/main.go`
 
@@ -51,6 +52,7 @@ git commit -m "feat: scaffold Go project with minimal main"
 ### Task 2: Config Data Model & YAML Persistence
 
 **Files:**
+
 - Create: `internal/config/types.go`
 - Create: `internal/config/config.go`
 - Create: `internal/config/config_test.go`
@@ -365,6 +367,7 @@ git commit -m "feat: add config data model with YAML persistence"
 ### Task 3: Tag Management
 
 **Files:**
+
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
 
@@ -481,6 +484,7 @@ git commit -m "feat: add tag management (add/remove tags)"
 ### Task 4: SSH Config Sync
 
 **Files:**
+
 - Create: `internal/config/sync.go`
 - Create: `internal/config/sync_test.go`
 
@@ -796,6 +800,7 @@ git commit -m "feat: add SSH config parsing and sync"
 ### Task 5: Global Config
 
 **Files:**
+
 - Create: `internal/config/global.go`
 - Create: `internal/config/global_test.go`
 
@@ -926,6 +931,7 @@ git commit -m "feat: add global config with defaults"
 ### Task 6: Keychain Password Storage
 
 **Files:**
+
 - Create: `internal/config/keychain.go`
 - Create: `internal/config/keychain_test.go`
 
@@ -996,6 +1002,7 @@ git commit -m "feat: add keychain password storage wrapper"
 ### Task 7: CLI Framework with Cobra
 
 **Files:**
+
 - Create: `internal/cli/root.go`
 - Create: `internal/cli/list.go`
 - Create: `internal/cli/add.go`
@@ -1459,6 +1466,7 @@ git commit -m "feat: add CLI framework with all subcommands"
 ### Task 8: System SSH Interactive Sessions
 
 **Files:**
+
 - Create: `internal/ssh/session.go`
 - Create: `internal/ssh/session_test.go`
 
@@ -1593,6 +1601,7 @@ git commit -m "feat: add SSH session builder with jump host support"
 ### Task 9: Fleet Execution Engine
 
 **Files:**
+
 - Create: `internal/fleet/executor.go`
 - Create: `internal/fleet/executor_test.go`
 - Create: `internal/fleet/output.go`
@@ -1915,6 +1924,7 @@ git commit -m "feat: add fleet execution engine with streaming output"
 ### Task 10: Wire Fleet Exec into CLI
 
 **Files:**
+
 - Modify: `internal/cli/exec.go`
 
 **Step 1: Update exec command to use fleet engine**
@@ -2007,6 +2017,7 @@ git commit -m "feat: wire fleet exec into CLI with colored output"
 ### Task 11: Auth — SSH Agent & Key File Support
 
 **Files:**
+
 - Create: `internal/ssh/auth.go`
 - Create: `internal/ssh/auth_test.go`
 - Modify: `internal/fleet/executor.go` (replace stubs)
@@ -2138,6 +2149,7 @@ git commit -m "feat: add SSH agent and key file authentication"
 ### Task 12: TUI — Base App Shell
 
 **Files:**
+
 - Create: `internal/tui/app.go`
 - Create: `internal/tui/styles.go`
 - Modify: `internal/cli/root.go`
@@ -2448,6 +2460,7 @@ git commit -m "feat: add TUI base shell with sidebar and connection details"
 ### Task 13: TUI — Live SSH Sessions
 
 **Files:**
+
 - Create: `internal/tui/session.go`
 - Modify: `internal/tui/app.go`
 
@@ -2544,6 +2557,7 @@ func (s *Session) Output() []byte {
 **Step 2: Add session management to app model**
 
 Update `internal/tui/app.go` to add:
+
 - `sessions []*Session` field
 - `activeSession int` field
 - Session list in sidebar (below connections)
@@ -2569,11 +2583,13 @@ git commit -m "feat: add live SSH session management in TUI"
 ### Task 14: TUI — Fleet Exec View
 
 **Files:**
+
 - Modify: `internal/tui/app.go`
 
 **Step 1: Add exec mode to TUI**
 
 Add to `internal/tui/app.go`:
+
 - `e` key opens exec input (text input for command)
 - Target selection via tag filter or multi-select
 - Results stream into right pane with colored left borders
@@ -2596,11 +2612,13 @@ git commit -m "feat: add fleet exec view in TUI"
 ### Task 15: TUI — SSH Config Sync Integration
 
 **Files:**
+
 - Modify: `internal/tui/app.go`
 
 **Step 1: Implement sync message and handler**
 
 Add to `internal/tui/app.go`:
+
 - `syncMsg` tea.Msg type with results
 - `S` key triggers sync, shows results in a brief notification
 - After sync, refresh connection list
@@ -2623,6 +2641,7 @@ git commit -m "feat: add SSH config sync to TUI"
 ### Task 16: Password Prompt Integration
 
 **Files:**
+
 - Modify: `internal/tui/session.go`
 - Modify: `internal/cli/connect.go`
 
@@ -2646,6 +2665,7 @@ git commit -m "feat: add password prompt with keychain save option"
 ### Task 17: End-to-End Testing & Polish
 
 **Files:**
+
 - Create: `internal/cli/cli_test.go`
 
 **Step 1: Write CLI integration tests**
