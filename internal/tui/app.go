@@ -263,30 +263,12 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	// Title bar
-	title := titleStyle.Render("HANGAR")
-	syncIndicator := ""
-	if m.sshConfigChanged {
-		syncIndicator = syncIndicatorStyle.Render(" * SSH config changed ")
-	}
-	titlePad := m.width - lipgloss.Width(title) - lipgloss.Width(syncIndicator)
-	if titlePad < 0 {
-		titlePad = 0
-	}
-	titleBar := titleBarStyle.Width(m.width).Render(
-		lipgloss.JoinHorizontal(lipgloss.Top,
-			title,
-			lipgloss.NewStyle().Width(titlePad).Background(surface).Render(""),
-			syncIndicator,
-		),
-	)
-
 	// Content area
-	contentHeight := m.height - 2
+	contentHeight := m.height - 1 // leave 1 line for status bar
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
-	sidebarWidth := 28
+	sidebarWidth := 26
 
 	sidebar := m.renderSidebar()
 	mainPane := m.renderMainPane()
@@ -294,63 +276,53 @@ func (m Model) View() string {
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		sidebarStyle.Width(sidebarWidth).Height(contentHeight).MaxHeight(contentHeight).Render(sidebar),
-		mainPaneStyle.Width(m.width-sidebarWidth-4).Height(contentHeight).MaxHeight(contentHeight).Render(mainPane),
+		mainPaneStyle.Width(m.width-sidebarWidth-3).Height(contentHeight).MaxHeight(contentHeight).Render(mainPane),
 	)
 
 	// Status bar
 	statusBar := m.renderStatusBar()
 
-	return lipgloss.JoinVertical(lipgloss.Left, titleBar, content, statusBar)
-}
-
-func styledKey(key, label string) string {
-	return statusKeyStyle.Render(key) + statusBarStyle.Render(" "+label+"  ")
+	return lipgloss.JoinVertical(lipgloss.Left, content, statusBar)
 }
 
 func (m Model) renderStatusBar() string {
 	var bar string
 	switch {
 	case m.form == formAdd || m.form == formEdit:
-		bar = styledKey("Tab", "next") + styledKey("S-Tab", "prev") + styledKey("Enter", "save") + styledKey("Esc", "cancel")
+		bar = " tab:next  shift+tab:prev  enter:save  esc:cancel"
 	case m.form == formDelete:
-		bar = styledKey("y", "confirm") + styledKey("Esc", "cancel")
+		bar = " y:confirm  esc:cancel"
 	case m.form == formTag:
-		bar = styledKey("Enter", "save") + styledKey("Esc", "cancel") + statusBarStyle.Render("  prefix with - to remove")
+		bar = " enter:save  esc:cancel  (prefix with - to remove)"
 	case m.form == formSync:
-		bar = styledKey("Space", "toggle") + styledKey("a", "all") + styledKey("n", "none") + styledKey("Enter", "import") + styledKey("Esc", "cancel")
+		bar = " space:toggle  a:all  n:none  enter:import  esc:cancel"
 	default:
-		bar = styledKey("n", "new") + styledKey("e", "edit") + styledKey("d", "del") + styledKey("Enter", "connect") + styledKey("s", "sync") + styledKey("t", "tag") + styledKey("/", "find") + styledKey("q", "quit")
+		bar = " n:new  e:edit  d:del  enter:connect  s:sync  t:tag  /:find  q:quit"
 	}
-	return statusBarStyle.Width(m.width).Render(bar)
+	return statusBarStyle.Render(bar)
 }
 
 func (m Model) renderSidebar() string {
 	var b strings.Builder
 
-	b.WriteString(sectionHeaderStyle.Render("Connections"))
-	b.WriteString("\n")
-
-	// Filter bar
 	if m.filtering {
-		b.WriteString(filterPromptStyle.Render(" / ") + filterInputStyle.Render(m.filterText+"_"))
+		b.WriteString(dimStyle.Render("/") + " " + normalStyle.Render(m.filterText) + cursorStyle.Render("_"))
 	} else if m.filterText != "" {
-		b.WriteString(filterPromptStyle.Render(" / ") + filterInputStyle.Render(m.filterText))
-	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(dimText).Render("  / filter..."))
+		b.WriteString(dimStyle.Render("/ " + m.filterText))
 	}
 	b.WriteString("\n\n")
 
 	conns := m.filteredConnections()
 	if len(conns) == 0 {
-		b.WriteString(emptyStyle.Render("  No connections"))
+		b.WriteString(dimStyle.Render("  no connections"))
 		return b.String()
 	}
 
 	for i, c := range conns {
 		if i == m.cursor {
-			b.WriteString(selectedStyle.Render(" " + c.Name))
+			b.WriteString(cursorStyle.Render("> ") + selectedStyle.Render(c.Name))
 		} else {
-			b.WriteString(normalStyle.Render(c.Name))
+			b.WriteString("  " + normalStyle.Render(c.Name))
 		}
 		b.WriteString("\n")
 	}
@@ -382,7 +354,7 @@ func (m Model) renderMainPane() string {
 	// Show connection details
 	conns := m.filteredConnections()
 	if len(conns) == 0 {
-		return emptyStyle.Render("No connections\n\nPress n to add or s to sync from SSH config")
+		return dimStyle.Render("no connections\n\npress n to add or s to sync from SSH config")
 	}
 	if m.cursor >= len(conns) {
 		return ""
@@ -391,29 +363,32 @@ func (m Model) renderMainPane() string {
 	c := conns[m.cursor]
 	var b strings.Builder
 
-	b.WriteString(detailTitleStyle.Render(c.Name))
+	b.WriteString(titleStyle.Render(c.Name))
 	b.WriteString("\n\n")
 
 	row := func(label, value string) {
-		b.WriteString(detailLabelStyle.Render(label) + detailValueStyle.Render(value) + "\n")
+		b.WriteString(labelStyle.Render(label) + " " + valueStyle.Render(value) + "\n")
 	}
 
-	row("Host", c.Host)
-	row("Port", fmt.Sprintf("%d", c.Port))
-	row("User", c.User)
+	row("host", c.Host)
+	row("port", fmt.Sprintf("%d", c.Port))
+	row("user", c.User)
 	if c.IdentityFile != "" {
-		row("Key", c.IdentityFile)
+		row("key", c.IdentityFile)
 	}
 	if pass, err := config.GetPassword(c.Name); err == nil && pass != "" {
-		row("Pass", "********")
+		row("pass", "********")
 	}
 	if c.JumpHost != "" {
-		row("Jump", c.JumpHost)
+		row("jump", c.JumpHost)
 	}
 
 	if len(c.Tags) > 0 {
 		b.WriteString("\n")
-		for _, t := range c.Tags {
+		for i, t := range c.Tags {
+			if i > 0 {
+				b.WriteString(dimStyle.Render(", "))
+			}
 			b.WriteString(tagStyle.Render(t))
 		}
 		b.WriteString("\n")
@@ -421,7 +396,7 @@ func (m Model) renderMainPane() string {
 
 	if c.SyncedFromSSHConfig {
 		b.WriteString("\n")
-		b.WriteString(importedBadge.Render("synced from SSH config"))
+		b.WriteString(dimStyle.Render("synced from ssh config"))
 	}
 
 	return b.String()
@@ -646,33 +621,29 @@ func (m Model) handleSyncInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) renderSyncList() string {
 	var b strings.Builder
-	b.WriteString(formTitleStyle.Render("Import from SSH Config"))
+	b.WriteString(titleStyle.Render("Import from SSH Config"))
 	b.WriteString("\n\n")
 
 	for i, entry := range m.syncEntries {
-		var check string
+		check := "[ ]"
 		if m.syncSelected[i] {
-			check = checkboxOn.Render("[x]")
-		} else {
-			check = checkboxOff.Render("[ ]")
+			check = successStyle.Render("[x]")
 		}
 
 		_, err := m.cfg.FindByName(entry.Name)
 		alreadyImported := err == nil
 
-		name := detailValueStyle.Render(entry.Name)
-		detail := lipgloss.NewStyle().Foreground(dimText).Render(
-			fmt.Sprintf("  %s@%s:%d", entry.User, entry.Host, entry.Port))
+		name := entry.Name
+		detail := dimStyle.Render(fmt.Sprintf("  %s@%s:%d", entry.User, entry.Host, entry.Port))
 		badge := ""
 		if alreadyImported {
-			badge = importedBadge.Render(" (imported)")
+			badge = dimStyle.Render(" (imported)")
 		}
 
-		line := check + " " + name + detail + badge
 		if i == m.syncCursor {
-			b.WriteString(lipgloss.NewStyle().Background(cursorBg).Render(" " + line + " "))
+			b.WriteString(cursorStyle.Render("> ") + check + " " + selectedStyle.Render(name) + detail + badge)
 		} else {
-			b.WriteString(" " + line)
+			b.WriteString("  " + check + " " + normalStyle.Render(name) + detail + badge)
 		}
 		b.WriteString("\n")
 	}
@@ -682,41 +653,32 @@ func (m Model) renderSyncList() string {
 
 func (m Model) renderForm() string {
 	var b strings.Builder
-	title := "New Connection"
 	if m.form == formEdit {
-		title = "Edit Connection"
+		b.WriteString(titleStyle.Render("Edit Connection"))
+	} else {
+		b.WriteString(titleStyle.Render("New Connection"))
 	}
-	b.WriteString(formTitleStyle.Render(title))
 	b.WriteString("\n\n")
 
 	for i := 0; i < fieldCount; i++ {
 		value := m.formFields[i]
-
-		// Mask password field
-		displayValue := value
 		if i == fieldPassword && value != "" {
-			displayValue = strings.Repeat("*", len(value))
+			value = strings.Repeat("*", len(value))
 		}
 
+		label := labelStyle.Render(strings.ToLower(fieldLabels[i]))
 		if i == m.formCursor {
-			label := formActiveLabel.Render(fieldLabels[i])
-			input := formActiveInput.Width(30).Render(displayValue + "_")
-			b.WriteString(label + input)
+			b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(fieldLabels[i])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
 		} else if m.form == formEdit && i == fieldName {
-			label := formLabelStyle.Render(fieldLabels[i])
-			input := formReadonlyStyle.Render(displayValue)
-			b.WriteString(label + input)
+			b.WriteString("  " + label + " " + dimStyle.Render(value+" (readonly)"))
 		} else {
-			label := formLabelStyle.Render(fieldLabels[i])
-			input := formInputStyle.Width(30).Render(displayValue)
-			b.WriteString(label + input)
+			b.WriteString("  " + label + " " + normalStyle.Render(value))
 		}
 		b.WriteString("\n")
 	}
 
 	if m.formError != "" {
-		b.WriteString("\n")
-		b.WriteString(errorStyle.Render("  " + m.formError))
+		b.WriteString("\n" + errorStyle.Render("  " + m.formError))
 	}
 
 	return b.String()
@@ -724,38 +686,34 @@ func (m Model) renderForm() string {
 
 func (m Model) renderDeleteConfirm() string {
 	var b strings.Builder
-	b.WriteString(formTitleStyle.Render("Delete Connection"))
+	b.WriteString(titleStyle.Render("Delete Connection"))
 	b.WriteString("\n\n")
-	b.WriteString(detailValueStyle.Render("Remove "))
-	b.WriteString(detailTitleStyle.Render(m.formTarget))
-	b.WriteString(detailValueStyle.Render("?"))
+	b.WriteString(normalStyle.Render("Remove ") + selectedStyle.Render(m.formTarget) + normalStyle.Render("?"))
 	b.WriteString("\n\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(dimText).Render("This cannot be undone."))
+	b.WriteString(dimStyle.Render("this cannot be undone"))
 	return b.String()
 }
 
 func (m Model) renderTagInput() string {
 	var b strings.Builder
-	b.WriteString(formTitleStyle.Render("Manage Tags"))
+	b.WriteString(titleStyle.Render("Tags: " + m.formTarget))
 	b.WriteString("\n\n")
 
 	c, err := m.cfg.FindByName(m.formTarget)
-	if err == nil {
-		if len(c.Tags) > 0 {
-			for _, t := range c.Tags {
-				b.WriteString(tagStyle.Render(t))
+	if err == nil && len(c.Tags) > 0 {
+		for i, t := range c.Tags {
+			if i > 0 {
+				b.WriteString(dimStyle.Render(", "))
 			}
-			b.WriteString("\n")
-		} else {
-			b.WriteString(emptyStyle.Render("No tags"))
+			b.WriteString(tagStyle.Render(t))
 		}
+		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(formActiveLabel.Render("Tags"))
-	b.WriteString(formActiveInput.Width(30).Render(m.tagInput + "_"))
+	b.WriteString(activeFieldStyle.Render("> add") + " " + normalStyle.Render(m.tagInput) + cursorStyle.Render("_"))
 	b.WriteString("\n\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(dimText).Render("Comma-separated. Prefix with - to remove."))
+	b.WriteString(dimStyle.Render("comma-separated, prefix with - to remove"))
 
 	return b.String()
 }
