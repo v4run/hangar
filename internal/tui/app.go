@@ -2,10 +2,9 @@ package tui
 
 import (
 	"fmt"
-	"regexp"
+	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -14,17 +13,10 @@ import (
 	sshauth "github.com/v4run/hangar/internal/ssh"
 )
 
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]|\r`)
-
-func stripAnsi(s string) string {
-	return ansiRegex.ReplaceAllString(s, "")
-}
-
 type focus int
 
 const (
 	focusSidebar focus = iota
-	focusSession
 )
 
 type formMode int
@@ -62,11 +54,8 @@ type Model struct {
 	sshConfigChanged bool
 	filterText       string
 	filtering        bool
-	quitting         bool
-	sessions         []*Session
-	activeSession    int      // index into sessions, -1 if none
-	hangarMode       bool     // true when prefix key (Ctrl+a) pressed
-	execMode         bool     // true when in exec input mode
+	quitting    bool
+	execMode    bool // true when in exec input mode
 	execInput        string   // the command being typed
 	execOutput       []string // output lines from fleet exec
 	execRunning      bool     // true while exec is in progress
@@ -78,13 +67,7 @@ type Model struct {
 	tagInput         string   // input for tag mode
 }
 
-type tickMsg struct{}
-
-func tickCmd() tea.Cmd {
-	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-		return tickMsg{}
-	})
-}
+type sshExitMsg struct{ err error }
 
 func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDir string, sshChanged bool) Model {
 	return Model{
@@ -93,7 +76,6 @@ func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDi
 		configDir:        configDir,
 		focus:            focusSidebar,
 		sshConfigChanged: sshChanged,
-		activeSession:    -1,
 	}
 }
 
@@ -106,22 +88,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Resize active session PTY if any
-		if m.activeSession >= 0 && m.activeSession < len(m.sessions) {
-			sidebarWidth := 25
-			s := m.sessions[m.activeSession]
-			cols := m.width - sidebarWidth - 3
-			rows := m.height - 4
-			if cols > 0 && rows > 0 {
-				s.Resize(rows, cols)
-			}
-		}
 
-	case tickMsg:
-		// Re-render to show updated session output
-		if m.hasActiveSessions() {
-			return m, tickCmd()
-		}
+	case sshExitMsg:
+		// SSH session ended, back to TUI
+		return m, nil
 
 	case syncResultMsg:
 		if msg.err == nil {
@@ -139,59 +109,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// If in an active session and NOT in hangar mode, forward to PTY
-		if m.focus == focusSession && !m.hangarMode && m.activeSession >= 0 {
-			if msg.String() == "ctrl+a" {
-				m.hangarMode = true
-				return m, nil
-			}
-			// Forward keystroke to session
-			s := m.sessions[m.activeSession]
-			if s.IsActive() {
-				data := keyToBytes(msg)
-				if len(data) > 0 {
-					s.Write(data)
-				}
-			}
-			return m, nil
-		}
-
-		// If in hangar mode
-		if m.hangarMode {
-			switch msg.String() {
-			case "esc":
-				m.hangarMode = false
-				m.focus = focusSidebar
-			case "j", "down":
-				if m.activeSession < len(m.sessions)-1 {
-					m.activeSession++
-				}
-			case "k", "up":
-				if m.activeSession > 0 {
-					m.activeSession--
-				}
-			case "enter":
-				m.hangarMode = false
-				m.focus = focusSession
-			case "d":
-				// Disconnect current session
-				if m.activeSession >= 0 && m.activeSession < len(m.sessions) {
-					m.sessions[m.activeSession].Close()
-					m.sessions = append(m.sessions[:m.activeSession], m.sessions[m.activeSession+1:]...)
-					if len(m.sessions) == 0 {
-						m.activeSession = -1
-						m.hangarMode = false
-						m.focus = focusSidebar
-					} else {
-						if m.activeSession >= len(m.sessions) {
-							m.activeSession = len(m.sessions) - 1
-						}
-					}
-				}
-			}
-			return m, nil
-		}
-
 		// Form input handling (add/edit/delete/tag)
 		if m.form == formAdd || m.form == formEdit {
 			return m.handleFormInput(msg)
@@ -248,10 +165,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Normal sidebar mode
 		switch msg.String() {
 		case "q", "ctrl+c":
-			// Close all sessions before quitting
-			for _, s := range m.sessions {
-				s.Close()
-			}
 			m.quitting = true
 			return m, tea.Quit
 		case "j", "down":
@@ -307,91 +220,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tagInput = ""
 			}
 		case "c":
-			// Connect to highlighted connection
+			// Connect to highlighted connection — full screen SSH
 			conns := m.filteredConnections()
 			if m.cursor < len(conns) {
 				conn := conns[m.cursor]
-				var jumpHost *config.Connection
+				args := sshauth.BuildSSHArgs(&conn, nil)
 				if conn.JumpHost != "" {
-					jh, _ := m.cfg.FindByName(conn.JumpHost)
-					jumpHost = jh
-				}
-				s, err := NewSession(&conn, jumpHost)
-				if err == nil {
-					m.sessions = append(m.sessions, s)
-					m.activeSession = len(m.sessions) - 1
-					m.focus = focusSession
-					m.hangarMode = false
-					// Resize to current dimensions
-					sidebarWidth := 25
-					cols := m.width - sidebarWidth - 3
-					rows := m.height - 4
-					if cols > 0 && rows > 0 {
-						s.Resize(rows, cols)
+					if jh, err := m.cfg.FindByName(conn.JumpHost); err == nil {
+						args = sshauth.BuildSSHArgs(&conn, jh)
 					}
-					return m, tickCmd()
 				}
+				c := exec.Command("ssh", args...)
+				return m, tea.ExecProcess(c, func(err error) tea.Msg {
+					return sshExitMsg{err: err}
+				})
 			}
 		}
 	}
 
 	return m, nil
-}
-
-// keyToBytes converts a bubbletea key message to raw bytes for PTY input.
-func keyToBytes(msg tea.KeyMsg) []byte {
-	switch msg.Type {
-	case tea.KeyEnter:
-		return []byte{'\r'}
-	case tea.KeyBackspace:
-		return []byte{127}
-	case tea.KeyTab:
-		return []byte{'\t'}
-	case tea.KeyEscape:
-		return []byte{27}
-	case tea.KeySpace:
-		return []byte{' '}
-	case tea.KeyUp:
-		return []byte{27, '[', 'A'}
-	case tea.KeyDown:
-		return []byte{27, '[', 'B'}
-	case tea.KeyRight:
-		return []byte{27, '[', 'C'}
-	case tea.KeyLeft:
-		return []byte{27, '[', 'D'}
-	case tea.KeyCtrlC:
-		return []byte{3}
-	case tea.KeyCtrlD:
-		return []byte{4}
-	case tea.KeyCtrlZ:
-		return []byte{26}
-	case tea.KeyCtrlL:
-		return []byte{12}
-	case tea.KeyDelete:
-		return []byte{27, '[', '3', '~'}
-	case tea.KeyHome:
-		return []byte{27, '[', 'H'}
-	case tea.KeyEnd:
-		return []byte{27, '[', 'F'}
-	case tea.KeyPgUp:
-		return []byte{27, '[', '5', '~'}
-	case tea.KeyPgDown:
-		return []byte{27, '[', '6', '~'}
-	case tea.KeyRunes:
-		if len(msg.Runes) > 0 {
-			return []byte(string(msg.Runes))
-		}
-	}
-	return nil
-}
-
-func (m Model) hasActiveSessions() bool {
-	for _, s := range m.sessions {
-		if s.IsActive() {
-			return true
-		}
-	}
-	return false
 }
 
 func (m Model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -529,9 +376,6 @@ func (m Model) renderStatusBar() string {
 	if m.form == formTag {
 		return statusBarStyle.Render(" TAG: [Enter]save [Esc]cancel  prefix with - to remove")
 	}
-	if m.hangarMode {
-		return statusBarStyle.Render(" HANGAR MODE: [j/k]navigate [enter]switch [d]disconnect [esc]back")
-	}
 	if m.execMode {
 		if m.execRunning {
 			return statusBarStyle.Render(" EXEC: running...")
@@ -539,9 +383,6 @@ func (m Model) renderStatusBar() string {
 			return statusBarStyle.Render(" EXEC: complete  [esc]close")
 		}
 		return statusBarStyle.Render(" EXEC: type command, [enter]run [esc]cancel")
-	}
-	if m.focus == focusSession {
-		return statusBarStyle.Render(" SESSION: Ctrl+a for hangar mode")
 	}
 	return statusBarStyle.Render(" [a]dd [enter]edit [x]del [c]onnect [e]xec [s]ync [t]ag [/]find [q]uit")
 }
@@ -570,27 +411,6 @@ func (m Model) renderSidebar() string {
 		}
 		b.WriteString(style.Render(prefix + c.Name))
 		b.WriteString("\n")
-	}
-
-	// Sessions section
-	if len(m.sessions) > 0 {
-		b.WriteString("\n")
-		b.WriteString(sectionHeaderStyle.Render(fmt.Sprintf("Sessions (%d)", len(m.sessions))))
-		b.WriteString("\n")
-		for i, s := range m.sessions {
-			style := normalStyle
-			prefix := "  "
-			if (m.focus == focusSession || m.hangarMode) && i == m.activeSession {
-				style = selectedStyle
-				prefix = "> "
-			}
-			status := ""
-			if !s.IsActive() {
-				status = " (closed)"
-			}
-			b.WriteString(style.Render(prefix + s.Name + status))
-			b.WriteString("\n")
-		}
 	}
 
 	return b.String()
@@ -627,21 +447,6 @@ func (m Model) renderMainPane() string {
 			b.WriteString("Press Enter to run, Esc to cancel\n")
 		}
 		return b.String()
-	}
-
-	// Show session output when viewing a session or in hangar mode
-	if (m.focus == focusSession || m.hangarMode) && m.activeSession >= 0 && m.activeSession < len(m.sessions) {
-		s := m.sessions[m.activeSession]
-		output := stripAnsi(string(s.Output()))
-		lines := strings.Split(output, "\n")
-		maxLines := m.height - 4
-		if maxLines < 1 {
-			maxLines = 1
-		}
-		if len(lines) > maxLines {
-			lines = lines[len(lines)-maxLines:]
-		}
-		return strings.Join(lines, "\n")
 	}
 
 	// Show connection details
