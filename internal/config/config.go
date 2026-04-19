@@ -1,0 +1,89 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+)
+
+const connectionsFile = "connections.yaml"
+
+func Load(dir string) (*HangarConfig, error) {
+	path := filepath.Join(dir, connectionsFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &HangarConfig{}, nil
+		}
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	var cfg HangarConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+	return &cfg, nil
+}
+
+func Save(dir string, cfg *HangarConfig) error {
+	seen := make(map[string]bool)
+	for _, c := range cfg.Connections {
+		if seen[c.Name] {
+			return fmt.Errorf("duplicate connection name: %s", c.Name)
+		}
+		seen[c.Name] = true
+	}
+
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("creating config dir: %w", err)
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+	path := filepath.Join(dir, connectionsFile)
+	return os.WriteFile(path, data, 0600)
+}
+
+func (cfg *HangarConfig) Add(conn Connection) error {
+	for _, c := range cfg.Connections {
+		if c.Name == conn.Name {
+			return fmt.Errorf("connection %q already exists", conn.Name)
+		}
+	}
+	cfg.Connections = append(cfg.Connections, conn)
+	return nil
+}
+
+func (cfg *HangarConfig) Remove(name string) error {
+	for i, c := range cfg.Connections {
+		if c.Name == name {
+			cfg.Connections = append(cfg.Connections[:i], cfg.Connections[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("connection %q not found", name)
+}
+
+func (cfg *HangarConfig) FindByName(name string) (*Connection, error) {
+	for i := range cfg.Connections {
+		if cfg.Connections[i].Name == name {
+			return &cfg.Connections[i], nil
+		}
+	}
+	return nil, fmt.Errorf("connection %q not found", name)
+}
+
+func (cfg *HangarConfig) FilterByTag(tag string) []Connection {
+	var results []Connection
+	for _, c := range cfg.Connections {
+		for _, t := range c.Tags {
+			if t == tag {
+				results = append(results, c)
+				break
+			}
+		}
+	}
+	return results
+}
