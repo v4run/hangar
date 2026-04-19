@@ -6,8 +6,11 @@ A terminal SSH connection manager with a TUI dashboard. Built in Go.
 
 - **TUI Dashboard** -- interactive terminal UI with connection browser and fuzzy filter
 - **Connection Management** -- add, edit, remove, and tag SSH connections
+- **Groups** -- organize connections into collapsible groups, cut/paste connections between groups
+- **Scripts** -- per-connection and global scripts, run remotely with one keypress
+- **Notes** -- attach notes to connections
 - **Full-Screen SSH** -- connect to servers with full terminal support (colors, vim, htop)
-- **SSH Config Sync** -- import connections from `~/.ssh/config` with automatic change detection
+- **Selective SSH Config Sync** -- import selected connections from `~/.ssh/config`
 - **Tags** -- organize connections with tags, filter by tag in both CLI and TUI
 - **Jump Host Support** -- ProxyJump chains for SSH connections
 - **Keychain Integration** -- store passwords in the system keychain (macOS Keychain / Linux secret-service)
@@ -72,36 +75,70 @@ hangar untag <name> <tags...> Remove tags from a connection
 Launch with `hangar` (no arguments).
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ hangar                          SSH config changed   │
-├──────────────┬──────────────────────────────────────┤
-│ Connections  │                                      │
-│ ──────────── │                                      │
-│  /filter...  │       Connection Details             │
+┌──────────────┬──────────────────────────────────────┐
+│ / filter...  │ prod-api  deploy@10.0.1.50:22        │
+│              │ key ~/.ssh/id_ed25519                 │
+│ > prod-api   │ via bastion                          │
+│   bastion    │ production, api                      │
 │              │                                      │
-│ > prod-api   │  Host: 10.0.1.50                     │
-│   bastion    │  Port: 22                            │
-│   staging    │  User: deploy                        │
-│              │  Tags: production, api               │
-│              │                                      │
+│ ▾ staging    │ notes maintenance window: Sun 2-4am  │
+│     web-1    │                                      │
+│     web-2    │ Scripts                               │
+│ ▸ dev (3)    │ > tail logs            $ tail -f ...  │
+│              │   disk usage  [global] $ df -h        │
 ├──────────────┴──────────────────────────────────────┤
-│ [a]dd [enter]edit [x]del [c]onnect [t]ag [/]find   │
+│ n:new e:edit d:del g:group x:cut y:paste enter:...  │
 └─────────────────────────────────────────────────────┘
 ```
 
-### Keybindings
+### Keybindings — Connection List (left pane)
 
-| Key       | Action                                  |
-| --------- | --------------------------------------- |
-| `j` / `k` | Navigate connections                    |
-| `/`       | Filter connections (by name or tag)     |
-| `a`       | Add new connection                      |
-| `Enter`   | Edit selected connection                |
-| `x`       | Delete selected connection              |
-| `t`       | Manage tags (prefix with `-` to remove) |
-| `c`       | Connect (full-screen SSH, TUI resumes on exit) |
-| `s`       | Sync from SSH config                    |
-| `q`       | Quit                                    |
+| Key       | Action                                         |
+| --------- | ---------------------------------------------- |
+| `j` / `k` | Navigate connections and groups                 |
+| `/`       | Filter connections (by name or tag)              |
+| `n`       | New connection                                   |
+| `e`       | Edit selected connection                         |
+| `d`       | Delete connection or group                       |
+| `t`       | Manage tags (prefix with `-` to remove)          |
+| `g`       | Create new group                                 |
+| `x`       | Cut connection (for moving between groups)       |
+| `y`       | Paste connection into group at cursor            |
+| `space`   | Expand/collapse group                            |
+| `l`       | Focus scripts pane (right side)                  |
+| `s`       | Sync from SSH config (selective import)          |
+| `Enter`   | Connect (full-screen SSH, TUI resumes on exit)   |
+| `q`       | Quit                                             |
+
+### Keybindings — Scripts Pane (right pane)
+
+| Key       | Action                              |
+| --------- | ----------------------------------- |
+| `j` / `k` | Navigate scripts                   |
+| `n`       | New script                          |
+| `e`       | Edit script                         |
+| `d`       | Delete script                       |
+| `o`       | Edit notes                          |
+| `Enter`   | Run script on server                |
+| `h`       | Back to connection list             |
+
+## Groups
+
+Connections can be organized into collapsible groups. Groups are always sorted alphabetically. Collapsed groups show the connection count.
+
+- Create a group with `g`, assign connections via the group field in the add/edit form
+- Move connections between groups with `x` (cut) and `y` (paste)
+- Delete a group with `d` on the group header — connections are ungrouped, not deleted
+- New connections pre-fill the group from your current cursor position
+
+## Scripts
+
+Attach scripts to connections or define global scripts shared across all servers.
+
+- **Per-connection scripts** -- saved in the connection config, run on that server
+- **Global scripts** -- shared across all connections, shown with `[global]` badge
+- Scripts run via `ssh -t server "bash -l -c 'command'"` for proper TTY and locale support
+- Output is shown full-screen with a "press any key" prompt before returning to TUI
 
 ## Configuration
 
@@ -118,7 +155,19 @@ connections:
     identity_file: ~/.ssh/id_ed25519
     tags: [production, api]
     jump_host: bastion
-    synced_from_ssh_config: false
+    group: production
+    notes: "maintenance window: Sundays 2-4am"
+    scripts:
+      - name: tail logs
+        command: tail -f /var/log/app.log
+      - name: restart
+        command: systemctl restart app
+
+global_scripts:
+  - name: disk usage
+    command: df -h
+  - name: uptime
+    command: uptime
 ```
 
 ### Global Config
@@ -127,7 +176,7 @@ Stored in `~/.hangar/config.yaml`:
 
 ```yaml
 ssh_config_path: ~/.ssh/config
-auto_sync: true # check for SSH config changes on startup
+auto_sync: true
 ```
 
 ## Authentication
