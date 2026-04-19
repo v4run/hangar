@@ -612,8 +612,9 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				sshCmd, cleanup := sshauth.NewSSHCommand(&conn, jumpHost)
 				// -t forces PTY allocation for interactive commands
-				// Wrap remote command to pause after execution
-				remoteCmd := script.Command + `; printf "\n\npress any key to continue..."; read -n 1`
+				// Run in login shell so locale/profile is sourced on remote
+				escapedCmd := strings.ReplaceAll(script.Command, "'", "'\\''")
+				remoteCmd := fmt.Sprintf("bash -l -c '%s; printf \"\\n\\npress any key to continue...\"; read -n 1'", escapedCmd)
 				userHost := sshCmd.Args[len(sshCmd.Args)-1]
 				sshCmd.Args = append(sshCmd.Args[:len(sshCmd.Args)-1],
 					"-t", userHost, remoteCmd)
