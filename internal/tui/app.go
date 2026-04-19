@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -611,10 +610,10 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						jumpHost = jh
 					}
 				}
-				args := sshauth.BuildSSHArgs(&conn, jumpHost)
-				args = append(args, script.Command)
-				cmd := exec.Command("ssh", args...)
+				cmd, cleanup := sshauth.NewSSHCommand(&conn, jumpHost)
+				cmd.Args = append(cmd.Args, script.Command)
 				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+					cleanup()
 					return sshExitMsg{err: err}
 				})
 			}
