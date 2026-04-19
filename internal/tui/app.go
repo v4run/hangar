@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/v4run/hangar/internal/config"
+	"github.com/v4run/hangar/internal/fleet"
 )
 
 type focus int
@@ -32,6 +33,10 @@ type Model struct {
 	sessions         []*Session
 	activeSession    int  // index into sessions, -1 if none
 	hangarMode       bool // true when prefix key (Ctrl+a) pressed
+	execMode         bool     // true when in exec input mode
+	execInput        string   // the command being typed
+	execOutput       []string // output lines from fleet exec
+	execRunning      bool     // true while exec is in progress
 }
 
 type tickMsg struct{}
@@ -78,6 +83,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.hasActiveSessions() {
 			return m, tickCmd()
 		}
+
+	case execResultMsg:
+		m.execOutput = msg.lines
+		m.execRunning = false
+		return m, nil
 
 	case tea.KeyMsg:
 		// If in an active session and NOT in hangar mode, forward to PTY
@@ -133,6 +143,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Exec input mode
+		if m.execMode && !m.execRunning {
+			switch msg.String() {
+			case "esc":
+				m.execMode = false
+				m.execInput = ""
+				m.execOutput = nil
+			case "enter":
+				if m.execInput != "" {
+					m.execRunning = true
+					return m, m.startExec()
+				}
+			case "backspace":
+				if len(m.execInput) > 0 {
+					m.execInput = m.execInput[:len(m.execInput)-1]
+				}
+			default:
+				if len(msg.String()) == 1 {
+					m.execInput += msg.String()
+				}
+			}
+			return m, nil
+		}
+
+		// Exec mode showing results — only esc to close
+		if m.execMode && m.execRunning {
+			return m, nil
+		}
+		if m.execMode && len(m.execOutput) > 0 {
+			if msg.String() == "esc" {
+				m.execMode = false
+				m.execInput = ""
+				m.execOutput = nil
+			}
+			return m, nil
+		}
+
 		// Filtering mode
 		if m.filtering {
 			return m.handleFilterInput(msg)
@@ -163,6 +210,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.sshConfigChanged {
 				return m, m.doSync()
 			}
+		case "e":
+			m.execMode = true
+			m.execInput = ""
+			m.execOutput = nil
 		case "c":
 			// Connect to highlighted connection
 			conns := m.filteredConnections()
@@ -358,6 +409,14 @@ func (m Model) renderStatusBar() string {
 	if m.hangarMode {
 		return statusBarStyle.Render(" HANGAR MODE: [j/k]navigate [enter]switch [d]disconnect [esc]back")
 	}
+	if m.execMode {
+		if m.execRunning {
+			return statusBarStyle.Render(" EXEC: running...")
+		} else if len(m.execOutput) > 0 {
+			return statusBarStyle.Render(" EXEC: complete  [esc]close")
+		}
+		return statusBarStyle.Render(" EXEC: type command, [enter]run [esc]cancel")
+	}
 	if m.focus == focusSession {
 		return statusBarStyle.Render(" SESSION: Ctrl+a for hangar mode")
 	}
@@ -415,6 +474,23 @@ func (m Model) renderSidebar() string {
 }
 
 func (m Model) renderMainPane() string {
+	// Show exec mode
+	if m.execMode {
+		var b strings.Builder
+		if m.execRunning {
+			b.WriteString("Running: " + m.execInput + "...\n\n")
+		} else if len(m.execOutput) > 0 {
+			b.WriteString("Exec: " + m.execInput + "\n\n")
+			for _, line := range m.execOutput {
+				b.WriteString(line + "\n")
+			}
+		} else {
+			b.WriteString("Exec> " + m.execInput + "_\n\n")
+			b.WriteString("Press Enter to run, Esc to cancel\n")
+		}
+		return b.String()
+	}
+
 	// Show session output when viewing a session
 	if m.focus == focusSession && m.activeSession >= 0 && m.activeSession < len(m.sessions) {
 		s := m.sessions[m.activeSession]
@@ -475,6 +551,41 @@ func (m Model) renderMainPane() string {
 	}
 
 	return b.String()
+}
+
+type execResultMsg struct {
+	lines []string
+}
+
+func (m Model) startExec() tea.Cmd {
+	return func() tea.Msg {
+		targets := m.cfg.Connections
+		if len(targets) == 0 {
+			return execResultMsg{lines: []string{"No connections configured."}}
+		}
+
+		output := make(chan fleet.Result, 100)
+		go fleet.Execute(targets, m.execInput, output, m.cfg)
+
+		var lines []string
+		serverNames := make([]string, len(targets))
+		for i, t := range targets {
+			serverNames[i] = t.Name
+		}
+		colors := fleet.AssignColors(serverNames)
+
+		for result := range output {
+			if result.Err != nil {
+				lines = append(lines, fleet.FormatLine(result.Server, colors[result.Server],
+					fmt.Sprintf("ERROR: %v", result.Err), true))
+			} else {
+				lines = append(lines, fleet.FormatLine(result.Server, colors[result.Server],
+					result.Line, true))
+			}
+		}
+
+		return execResultMsg{lines: lines}
+	}
 }
 
 func Run(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDir string, sshChanged bool) error {
