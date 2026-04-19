@@ -145,3 +145,45 @@ func TestFindByName(t *testing.T) {
 		t.Fatal("expected error for nonexistent name")
 	}
 }
+
+func TestAddTags(t *testing.T) {
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{Name: "server-1", Host: "10.0.0.1", Port: 22, User: "root", Tags: []string{"staging"}},
+		},
+	}
+	err := cfg.AddTags("server-1", []string{"api", "web"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	c, _ := cfg.FindByName("server-1")
+	if len(c.Tags) != 3 {
+		t.Fatalf("expected 3 tags, got %d: %v", len(c.Tags), c.Tags)
+	}
+
+	// Adding existing tag should not duplicate
+	err = cfg.AddTags("server-1", []string{"staging"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	c, _ = cfg.FindByName("server-1")
+	if len(c.Tags) != 3 {
+		t.Fatalf("expected 3 tags after duplicate add, got %d", len(c.Tags))
+	}
+}
+
+func TestRemoveTags(t *testing.T) {
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{Name: "server-1", Host: "10.0.0.1", Port: 22, User: "root", Tags: []string{"staging", "api", "web"}},
+		},
+	}
+	err := cfg.RemoveTags("server-1", []string{"api", "web"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	c, _ := cfg.FindByName("server-1")
+	if len(c.Tags) != 1 || c.Tags[0] != "staging" {
+		t.Fatalf("expected [staging], got %v", c.Tags)
+	}
+}

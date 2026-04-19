@@ -75,6 +75,43 @@ func (cfg *HangarConfig) FindByName(name string) (*Connection, error) {
 	return nil, fmt.Errorf("connection %q not found", name)
 }
 
+func (cfg *HangarConfig) AddTags(name string, tags []string) error {
+	c, err := cfg.FindByName(name)
+	if err != nil {
+		return err
+	}
+	existing := make(map[string]bool)
+	for _, t := range c.Tags {
+		existing[t] = true
+	}
+	for _, t := range tags {
+		if !existing[t] {
+			c.Tags = append(c.Tags, t)
+			existing[t] = true
+		}
+	}
+	return nil
+}
+
+func (cfg *HangarConfig) RemoveTags(name string, tags []string) error {
+	c, err := cfg.FindByName(name)
+	if err != nil {
+		return err
+	}
+	remove := make(map[string]bool)
+	for _, t := range tags {
+		remove[t] = true
+	}
+	filtered := c.Tags[:0]
+	for _, t := range c.Tags {
+		if !remove[t] {
+			filtered = append(filtered, t)
+		}
+	}
+	c.Tags = filtered
+	return nil
+}
+
 func (cfg *HangarConfig) FilterByTag(tag string) []Connection {
 	var results []Connection
 	for _, c := range cfg.Connections {
