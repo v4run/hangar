@@ -27,6 +27,8 @@ const (
 	formDelete
 	formTag
 	formSync
+	formAddGroup
+	formDeleteGroup
 	formAddScript
 	formEditScript
 	formDeleteScript
@@ -67,6 +69,8 @@ type Model struct {
 	filterText       string
 	filtering        bool
 	collapsed        map[string]bool // collapsed group state
+	cutConnection    string          // name of connection being moved (cut/paste)
+	groupNameInput   string          // input for new group name
 	quitting         bool
 	form     formMode
 	formFields       []string // field values: [name, host, port, user, key, jump, tags]
@@ -125,6 +129,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.form == formSync {
 			return m.handleSyncInput(msg)
+		}
+		if m.form == formAddGroup {
+			return m.handleAddGroupInput(msg)
+		}
+		if m.form == formDeleteGroup {
+			return m.handleDeleteGroupConfirm(msg)
 		}
 		if m.form == formAddScript || m.form == formEditScript {
 			return m.handleScriptFormInput(msg)
@@ -225,10 +235,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.formError = ""
 			}
 		case "d":
+			items := m.sidebarItems()
+			if m.cursor < len(items) && items[m.cursor].isGroup {
+				// Delete group
+				m.form = formDeleteGroup
+				m.formTarget = items[m.cursor].group
+			} else {
+				c := m.selectedConnection()
+				if c != nil {
+					m.form = formDelete
+					m.formTarget = c.Name
+				}
+			}
+		case "g":
+			// New group
+			m.form = formAddGroup
+			m.groupNameInput = ""
+			m.formError = ""
+		case "x":
+			// Cut connection
 			c := m.selectedConnection()
 			if c != nil {
-				m.form = formDelete
-				m.formTarget = c.Name
+				m.cutConnection = c.Name
+			}
+		case "y":
+			// Paste connection into group
+			if m.cutConnection != "" {
+				c, err := m.cfg.FindByName(m.cutConnection)
+				if err == nil {
+					items := m.sidebarItems()
+					targetGroup := ""
+					if m.cursor < len(items) {
+						if items[m.cursor].isGroup {
+							targetGroup = items[m.cursor].group
+						} else if items[m.cursor].conn != nil {
+							targetGroup = items[m.cursor].conn.Group
+						}
+					}
+					c.Group = targetGroup
+					config.Save(m.configDir, m.cfg)
+				}
+				m.cutConnection = ""
 			}
 		case "t":
 			c := m.selectedConnection()
@@ -334,6 +381,14 @@ func (m Model) sidebarItems() []sidebarItem {
 		items = append(items, sidebarItem{conn: &ungrouped[i]})
 	}
 
+	// Also include empty groups from cfg.Groups
+	for g := range m.cfg.Groups {
+		if !groupSeen[g] {
+			groupOrder = append(groupOrder, g)
+			groupSeen[g] = true
+		}
+	}
+
 	// Grouped connections
 	for _, g := range groupOrder {
 		items = append(items, sidebarItem{isGroup: true, group: g})
@@ -404,8 +459,10 @@ func (m Model) renderStatusBar() string {
 	switch {
 	case m.form == formAdd || m.form == formEdit:
 		bar = " tab:next  shift+tab:prev  enter:save  esc:cancel"
-	case m.form == formDelete || m.form == formDeleteScript:
+	case m.form == formDelete || m.form == formDeleteScript || m.form == formDeleteGroup:
 		bar = " y:confirm  esc:cancel"
+	case m.form == formAddGroup:
+		bar = " enter:save  esc:cancel"
 	case m.form == formTag:
 		bar = " enter:save  esc:cancel  (prefix with - to remove)"
 	case m.form == formSync:
@@ -417,7 +474,7 @@ func (m Model) renderStatusBar() string {
 	case m.focus == focusScripts:
 		bar = " n:new  e:edit  d:del  enter:run  o:notes  h:back  q:quit"
 	default:
-		bar = " n:new  e:edit  d:del  enter:connect  s:sync  t:tag  l:scripts  /:find  q:quit"
+		bar = " n:new  e:edit  d:del  g:group  x:cut  y:paste  enter:connect  s:sync  t:tag  l:scripts  /:find  q:quit"
 	}
 	return statusBarStyle.Render(bar)
 }
@@ -456,10 +513,14 @@ func (m Model) renderSidebar() string {
 			if item.conn.Group != "" {
 				indent = "    "
 			}
+			cutMark := ""
+			if m.cutConnection == item.conn.Name {
+				cutMark = dimStyle.Render(" ~")
+			}
 			if isCursor {
-				b.WriteString(cursorStyle.Render("> ") + indent[2:] + selectedStyle.Render(item.conn.Name))
+				b.WriteString(cursorStyle.Render("> ") + indent[2:] + selectedStyle.Render(item.conn.Name) + cutMark)
 			} else {
-				b.WriteString(indent + normalStyle.Render(item.conn.Name))
+				b.WriteString(indent + normalStyle.Render(item.conn.Name) + cutMark)
 			}
 		}
 		b.WriteString("\n")
@@ -479,6 +540,10 @@ func (m Model) renderMainPane() string {
 		return m.renderTagInput()
 	case formSync:
 		return m.renderSyncList()
+	case formAddGroup:
+		return m.renderAddGroup()
+	case formDeleteGroup:
+		return m.renderDeleteGroupConfirm()
 	case formAddScript, formEditScript:
 		return m.renderScriptForm()
 	case formDeleteScript:
@@ -838,6 +903,71 @@ func (m Model) handleNotesInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleAddGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form = formNone
+	case "enter":
+		name := strings.TrimSpace(m.groupNameInput)
+		if name == "" {
+			m.formError = "group name is required"
+			return m, nil
+		}
+		// Check if group already exists
+		for _, c := range m.cfg.Connections {
+			if c.Group == name {
+				m.formError = "group already exists"
+				return m, nil
+			}
+		}
+		// Create a placeholder — groups exist via connections having the group name.
+		// Just expand it in collapsed map so it's visible.
+		m.collapsed[name] = false
+		// We need at least one connection to reference this group,
+		// but groups can also just be tracked. Store empty groups separately.
+		if m.cfg.Groups == nil {
+			m.cfg.Groups = make(map[string]bool)
+		}
+		m.cfg.Groups[name] = true
+		config.Save(m.configDir, m.cfg)
+		m.form = formNone
+	case "backspace":
+		if len(m.groupNameInput) > 0 {
+			m.groupNameInput = m.groupNameInput[:len(m.groupNameInput)-1]
+		}
+	default:
+		if len(msg.String()) == 1 {
+			m.groupNameInput += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		// Ungroup all connections in this group
+		for i := range m.cfg.Connections {
+			if m.cfg.Connections[i].Group == m.formTarget {
+				m.cfg.Connections[i].Group = ""
+			}
+		}
+		delete(m.collapsed, m.formTarget)
+		if m.cfg.Groups != nil {
+			delete(m.cfg.Groups, m.formTarget)
+		}
+		config.Save(m.configDir, m.cfg)
+		items := m.sidebarItems()
+		if m.cursor >= len(items) && m.cursor > 0 {
+			m.cursor--
+		}
+		m.form = formNone
+	case "n", "N", "esc":
+		m.form = formNone
+	}
+	return m, nil
+}
+
 func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -1129,6 +1259,29 @@ func (m Model) renderDeleteConfirm() string {
 	b.WriteString(normalStyle.Render("Remove ") + selectedStyle.Render(m.formTarget) + normalStyle.Render("?"))
 	b.WriteString("\n\n")
 	b.WriteString(dimStyle.Render("this cannot be undone"))
+	return b.String()
+}
+
+func (m Model) renderAddGroup() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("New Group"))
+	b.WriteString("\n\n")
+	b.WriteString(activeFieldStyle.Render("> name") + " " + normalStyle.Render(m.groupNameInput) + cursorStyle.Render("_"))
+
+	if m.formError != "" {
+		b.WriteString("\n\n" + errorStyle.Render("  " + m.formError))
+	}
+
+	return b.String()
+}
+
+func (m Model) renderDeleteGroupConfirm() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Delete Group"))
+	b.WriteString("\n\n")
+	b.WriteString(normalStyle.Render("Remove group ") + selectedStyle.Render(m.formTarget) + normalStyle.Render("?"))
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("connections will be ungrouped, not deleted"))
 	return b.String()
 }
 

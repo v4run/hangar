@@ -27,9 +27,10 @@ type SSHSync struct {
 }
 
 type HangarConfig struct {
-	Connections   []Connection `yaml:"connections"`
-	SSHSync       SSHSync      `yaml:"ssh_sync"`
-	GlobalScripts []Script     `yaml:"global_scripts,omitempty"`
+	Connections   []Connection    `yaml:"connections"`
+	SSHSync       SSHSync         `yaml:"ssh_sync"`
+	GlobalScripts []Script        `yaml:"global_scripts,omitempty"`
+	Groups        map[string]bool `yaml:"groups,omitempty"`
 }
 
 type GlobalConfig struct {
