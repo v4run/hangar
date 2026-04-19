@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -224,14 +223,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			conns := m.filteredConnections()
 			if m.cursor < len(conns) {
 				conn := conns[m.cursor]
-				args := sshauth.BuildSSHArgs(&conn, nil)
+				var jumpHost *config.Connection
 				if conn.JumpHost != "" {
 					if jh, err := m.cfg.FindByName(conn.JumpHost); err == nil {
-						args = sshauth.BuildSSHArgs(&conn, jh)
+						jumpHost = jh
 					}
 				}
-				c := exec.Command("ssh", args...)
-				return m, tea.ExecProcess(c, func(err error) tea.Msg {
+				cmd, cleanup := sshauth.NewSSHCommand(&conn, jumpHost)
+				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+					cleanup()
 					return sshExitMsg{err: err}
 				})
 			}
