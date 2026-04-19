@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +13,12 @@ import (
 	"github.com/v4run/hangar/internal/fleet"
 	sshauth "github.com/v4run/hangar/internal/ssh"
 )
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]|\r`)
+
+func stripAnsi(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
+}
 
 type focus int
 
@@ -622,25 +629,10 @@ func (m Model) renderMainPane() string {
 		return b.String()
 	}
 
-	// Show session output when viewing a session
-	if m.focus == focusSession && m.activeSession >= 0 && m.activeSession < len(m.sessions) {
+	// Show session output when viewing a session or in hangar mode
+	if (m.focus == focusSession || m.hangarMode) && m.activeSession >= 0 && m.activeSession < len(m.sessions) {
 		s := m.sessions[m.activeSession]
-		output := string(s.Output())
-		lines := strings.Split(output, "\n")
-		maxLines := m.height - 4
-		if maxLines < 1 {
-			maxLines = 1
-		}
-		if len(lines) > maxLines {
-			lines = lines[len(lines)-maxLines:]
-		}
-		return strings.Join(lines, "\n")
-	}
-
-	// Show session output in hangar mode too
-	if m.hangarMode && m.activeSession >= 0 && m.activeSession < len(m.sessions) {
-		s := m.sessions[m.activeSession]
-		output := string(s.Output())
+		output := stripAnsi(string(s.Output()))
 		lines := strings.Split(output, "\n")
 		maxLines := m.height - 4
 		if maxLines < 1 {
