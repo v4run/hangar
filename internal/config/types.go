@@ -15,6 +15,7 @@ type Connection struct {
 	IdentityFile        string   `yaml:"identity_file,omitempty"`
 	Tags                []string `yaml:"tags,omitempty"`
 	JumpHost            string   `yaml:"jump_host,omitempty"`
+	Group               string   `yaml:"group,omitempty"`
 	SyncedFromSSHConfig bool     `yaml:"synced_from_ssh_config"`
 	Scripts             []Script `yaml:"scripts,omitempty"`
 	Notes               string   `yaml:"notes,omitempty"`

@@ -40,12 +40,20 @@ const (
 	fieldUser
 	fieldKey
 	fieldJump
+	fieldGroup
 	fieldTags
 	fieldPassword
 	fieldCount
 )
 
-var fieldLabels = []string{"Name", "Host", "Port", "User", "Key", "Jump", "Tags", "Pass"}
+var fieldLabels = []string{"Name", "Host", "Port", "User", "Key", "Jump", "Group", "Tags", "Pass"}
+
+// sidebarItem represents a row in the sidebar — either a group header or a connection.
+type sidebarItem struct {
+	isGroup bool
+	group   string             // group name (for headers)
+	conn    *config.Connection // connection (for connection rows)
+}
 
 type Model struct {
 	cfg              *config.HangarConfig
@@ -58,7 +66,8 @@ type Model struct {
 	sshConfigChanged bool
 	filterText       string
 	filtering        bool
-	quitting bool
+	collapsed        map[string]bool // collapsed group state
+	quitting         bool
 	form     formMode
 	formFields       []string // field values: [name, host, port, user, key, jump, tags]
 	formCursor       int      // which field is focused (0-6)
@@ -85,6 +94,7 @@ func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDi
 		configDir:        configDir,
 		focus:            focusSidebar,
 		sshConfigChanged: sshChanged,
+		collapsed:        make(map[string]bool),
 	}
 }
 
@@ -142,18 +152,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case "j", "down":
-			conns := m.filteredConnections()
-			if m.cursor < len(conns)-1 {
+			items := m.sidebarItems()
+			if m.cursor < len(items)-1 {
 				m.cursor++
 			}
 		case "k", "up":
 			if m.cursor > 0 {
 				m.cursor--
 			}
+		case " ":
+			// Toggle group collapse
+			items := m.sidebarItems()
+			if m.cursor < len(items) && items[m.cursor].isGroup {
+				g := items[m.cursor].group
+				m.collapsed[g] = !m.collapsed[g]
+			}
 		case "l":
 			// Move focus to scripts pane
-			conns := m.filteredConnections()
-			if len(conns) > 0 {
+			if m.selectedConnection() != nil {
 				m.focus = focusScripts
 				m.scriptCursor = 0
 			}
@@ -182,47 +198,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.form = formSync
 		case "n":
 			m.form = formAdd
-			m.formFields = []string{"", "", "22", "", "", "", "", ""}
+			// Pre-fill group from current selection if on a group header or grouped connection
+			currentGroup := ""
+			items := m.sidebarItems()
+			if m.cursor < len(items) {
+				if items[m.cursor].isGroup {
+					currentGroup = items[m.cursor].group
+				} else if items[m.cursor].conn != nil {
+					currentGroup = items[m.cursor].conn.Group
+				}
+			}
+			m.formFields = []string{"", "", "22", "", "", "", currentGroup, "", ""}
 			m.formCursor = 0
 			m.formError = ""
 		case "e":
-			conns := m.filteredConnections()
-			if m.cursor < len(conns) {
-				c := conns[m.cursor]
+			c := m.selectedConnection()
+			if c != nil {
 				m.form = formEdit
 				m.formTarget = c.Name
 				existingPass, _ := config.GetPassword(c.Name)
 				m.formFields = []string{
 					c.Name, c.Host, fmt.Sprintf("%d", c.Port), c.User,
-					c.IdentityFile, c.JumpHost, strings.Join(c.Tags, ", "), existingPass,
+					c.IdentityFile, c.JumpHost, c.Group, strings.Join(c.Tags, ", "), existingPass,
 				}
 				m.formCursor = 1
 				m.formError = ""
 			}
 		case "d":
-			conns := m.filteredConnections()
-			if m.cursor < len(conns) {
+			c := m.selectedConnection()
+			if c != nil {
 				m.form = formDelete
-				m.formTarget = conns[m.cursor].Name
+				m.formTarget = c.Name
 			}
 		case "t":
-			conns := m.filteredConnections()
-			if m.cursor < len(conns) {
+			c := m.selectedConnection()
+			if c != nil {
 				m.form = formTag
-				m.formTarget = conns[m.cursor].Name
+				m.formTarget = c.Name
 				m.tagInput = ""
 			}
 		case "enter":
-			conns := m.filteredConnections()
-			if m.cursor < len(conns) {
-				conn := conns[m.cursor]
+			c := m.selectedConnection()
+			if c != nil {
 				var jumpHost *config.Connection
-				if conn.JumpHost != "" {
-					if jh, err := m.cfg.FindByName(conn.JumpHost); err == nil {
+				if c.JumpHost != "" {
+					if jh, err := m.cfg.FindByName(c.JumpHost); err == nil {
 						jumpHost = jh
 					}
 				}
-				cmd, cleanup := sshauth.NewSSHCommand(&conn, jumpHost)
+				cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost)
 				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 					cleanup()
 					return sshExitMsg{err: err}
@@ -281,6 +305,67 @@ func (m Model) filteredConnections() []config.Connection {
 		}
 	}
 	return filtered
+}
+
+// sidebarItems builds a flat list of groups and connections for the sidebar.
+// Groups are sorted, ungrouped connections come first.
+func (m Model) sidebarItems() []sidebarItem {
+	conns := m.filteredConnections()
+
+	// Collect groups in order of first appearance
+	var groupOrder []string
+	groupSeen := make(map[string]bool)
+	var ungrouped []config.Connection
+
+	for i := range conns {
+		c := &conns[i]
+		if c.Group == "" {
+			ungrouped = append(ungrouped, *c)
+		} else if !groupSeen[c.Group] {
+			groupOrder = append(groupOrder, c.Group)
+			groupSeen[c.Group] = true
+		}
+	}
+
+	var items []sidebarItem
+
+	// Ungrouped connections first
+	for i := range ungrouped {
+		items = append(items, sidebarItem{conn: &ungrouped[i]})
+	}
+
+	// Grouped connections
+	for _, g := range groupOrder {
+		items = append(items, sidebarItem{isGroup: true, group: g})
+		if !m.collapsed[g] {
+			for i := range conns {
+				if conns[i].Group == g {
+					c := conns[i]
+					items = append(items, sidebarItem{conn: &c})
+				}
+			}
+		}
+	}
+
+	return items
+}
+
+// selectedConnection returns the connection at the current cursor, or nil if cursor is on a group header.
+func (m Model) selectedConnection() *config.Connection {
+	items := m.sidebarItems()
+	if m.cursor >= len(items) || m.cursor < 0 {
+		return nil
+	}
+	item := items[m.cursor]
+	if item.isGroup {
+		return nil
+	}
+	// Return the actual pointer from cfg
+	c, err := m.cfg.FindByName(item.conn.Name)
+	if err != nil {
+		return nil
+	}
+	return c
 }
 
 func (m Model) View() string {
@@ -347,17 +432,35 @@ func (m Model) renderSidebar() string {
 	}
 	b.WriteString("\n\n")
 
-	conns := m.filteredConnections()
-	if len(conns) == 0 {
+	items := m.sidebarItems()
+	if len(items) == 0 {
 		b.WriteString(dimStyle.Render("  no connections"))
 		return b.String()
 	}
 
-	for i, c := range conns {
-		if i == m.cursor {
-			b.WriteString(cursorStyle.Render("> ") + selectedStyle.Render(c.Name))
+	for i, item := range items {
+		isCursor := m.focus == focusSidebar && i == m.cursor
+
+		if item.isGroup {
+			arrow := "▸"
+			if !m.collapsed[item.group] {
+				arrow = "▾"
+			}
+			if isCursor {
+				b.WriteString(cursorStyle.Render("> ") + selectedStyle.Render(arrow+" "+item.group))
+			} else {
+				b.WriteString("  " + headerStyle.Render(arrow+" "+item.group))
+			}
 		} else {
-			b.WriteString("  " + normalStyle.Render(c.Name))
+			indent := "  "
+			if item.conn.Group != "" {
+				indent = "    "
+			}
+			if isCursor {
+				b.WriteString(cursorStyle.Render("> ") + indent[2:] + selectedStyle.Render(item.conn.Name))
+			} else {
+				b.WriteString(indent + normalStyle.Render(item.conn.Name))
+			}
 		}
 		b.WriteString("\n")
 	}
@@ -384,15 +487,19 @@ func (m Model) renderMainPane() string {
 		return m.renderNotesForm()
 	}
 
-	conns := m.filteredConnections()
-	if len(conns) == 0 {
-		return dimStyle.Render("no connections\n\npress n to add or s to sync from SSH config")
-	}
-	if m.cursor >= len(conns) {
+	c := m.selectedConnection()
+	if c == nil {
+		// Cursor might be on a group header
+		items := m.sidebarItems()
+		if m.cursor < len(items) && items[m.cursor].isGroup {
+			return dimStyle.Render("group: " + items[m.cursor].group + "\n\npress space to expand/collapse")
+		}
+		if len(m.filteredConnections()) == 0 {
+			return dimStyle.Render("no connections\n\npress n to add or s to sync from SSH config")
+		}
 		return ""
 	}
 
-	c := conns[m.cursor]
 	var b strings.Builder
 
 	// Connection info (compact)
@@ -519,16 +626,7 @@ func (m Model) renderNotesForm() string {
 
 // getSelectedConn returns a pointer to the currently selected connection.
 func (m *Model) getSelectedConn() *config.Connection {
-	conns := m.filteredConnections()
-	if m.cursor >= len(conns) {
-		return nil
-	}
-	// Find the actual connection in cfg by name
-	c, err := m.cfg.FindByName(conns[m.cursor].Name)
-	if err != nil {
-		return nil
-	}
-	return c
+	return m.selectedConnection()
 }
 
 // allScripts returns connection scripts + global scripts for the selected connection.
@@ -599,30 +697,25 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		// Run the selected script
-		if m.scriptCursor < len(scripts) {
-			conns := m.filteredConnections()
-			if m.cursor < len(conns) {
-				conn := conns[m.cursor]
-				script := scripts[m.scriptCursor]
-				var jumpHost *config.Connection
-				if conn.JumpHost != "" {
-					if jh, err := m.cfg.FindByName(conn.JumpHost); err == nil {
-						jumpHost = jh
-					}
+		conn := m.selectedConnection()
+		if m.scriptCursor < len(scripts) && conn != nil {
+			script := scripts[m.scriptCursor]
+			var jumpHost *config.Connection
+			if conn.JumpHost != "" {
+				if jh, err := m.cfg.FindByName(conn.JumpHost); err == nil {
+					jumpHost = jh
 				}
-				sshCmd, cleanup := sshauth.NewSSHCommand(&conn, jumpHost)
-				// -t forces PTY allocation for interactive commands
-				// Run in login shell so locale/profile is sourced on remote
-				escapedCmd := strings.ReplaceAll(script.Command, "'", "'\\''")
-				remoteCmd := fmt.Sprintf("bash -l -c '%s; printf \"\\npress any key to continue...\"; read -n 1'", escapedCmd)
-				userHost := sshCmd.Args[len(sshCmd.Args)-1]
-				sshCmd.Args = append(sshCmd.Args[:len(sshCmd.Args)-1],
-					"-t", userHost, remoteCmd)
-				return m, tea.ExecProcess(sshCmd, func(err error) tea.Msg {
-					cleanup()
-					return sshExitMsg{err: err}
-				})
 			}
+			sshCmd, cleanup := sshauth.NewSSHCommand(conn, jumpHost)
+			escapedCmd := strings.ReplaceAll(script.Command, "'", "'\\''")
+			remoteCmd := fmt.Sprintf("bash -l -c '%s; printf \"\\npress any key to continue...\"; read -n 1'", escapedCmd)
+			userHost := sshCmd.Args[len(sshCmd.Args)-1]
+			sshCmd.Args = append(sshCmd.Args[:len(sshCmd.Args)-1],
+				"-t", userHost, remoteCmd)
+			return m, tea.ExecProcess(sshCmd, func(err error) tea.Msg {
+				cleanup()
+				return sshExitMsg{err: err}
+			})
 		}
 	}
 	return m, nil
@@ -780,6 +873,7 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 	user := strings.TrimSpace(m.formFields[fieldUser])
 	key := strings.TrimSpace(m.formFields[fieldKey])
 	jump := strings.TrimSpace(m.formFields[fieldJump])
+	group := strings.TrimSpace(m.formFields[fieldGroup])
 	tagsStr := strings.TrimSpace(m.formFields[fieldTags])
 	password := m.formFields[fieldPassword]
 
@@ -820,6 +914,7 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 		User:         user,
 		IdentityFile: key,
 		JumpHost:     jump,
+		Group:        group,
 		Tags:         tags,
 	}
 
