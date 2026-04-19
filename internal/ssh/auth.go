@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/v4run/hangar/internal/config"
 	gossh "golang.org/x/crypto/ssh"
@@ -43,16 +44,30 @@ func BuildAuthMethods(conn *config.Connection) []gossh.AuthMethod {
 	return methods
 }
 
+var (
+	agentOnce   sync.Once
+	agentClient agent.ExtendedAgent
+)
+
 func AgentAuth() gossh.AuthMethod {
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if sock == "" {
 		return nil
 	}
-	conn, err := net.Dial("unix", sock)
-	if err != nil {
+
+	agentOnce.Do(func() {
+		conn, err := net.Dial("unix", sock)
+		if err != nil {
+			return
+		}
+		agentClient = agent.NewClient(conn)
+	})
+
+	if agentClient == nil {
 		return nil
 	}
-	return gossh.PublicKeysCallback(agent.NewClient(conn).Signers)
+
+	return gossh.PublicKeysCallback(agentClient.Signers)
 }
 
 func PublicKeyAuth(keyPath string) gossh.AuthMethod {
