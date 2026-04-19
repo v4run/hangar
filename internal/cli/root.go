@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/v4run/hangar/internal/config"
+	"github.com/v4run/hangar/internal/tui"
 )
 
 var cfgDir string
@@ -33,8 +33,30 @@ func NewRootCmd() *cobra.Command {
 		Short: "Terminal SSH manager",
 		Long:  "Hangar is a terminal SSH manager with TUI dashboard, session management, and fleet execution.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("TUI not yet implemented")
-			return nil
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			gc, err := config.LoadGlobal(configDir())
+			if err != nil {
+				return err
+			}
+
+			// Check if SSH config changed
+			sshChanged := false
+			if gc.AutoSync {
+				sshPath := gc.SSHConfigPath
+				if sshPath == "~/.ssh/config" {
+					home, _ := os.UserHomeDir()
+					sshPath = filepath.Join(home, ".ssh", "config")
+				}
+				changed, err := cfg.NeedsSync(sshPath)
+				if err == nil {
+					sshChanged = changed
+				}
+			}
+
+			return tui.Run(cfg, gc, configDir(), sshChanged)
 		},
 	}
 
