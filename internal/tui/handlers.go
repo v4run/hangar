@@ -287,6 +287,9 @@ func (m Model) handleDeleteScriptConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.scriptCursor--
 		}
 		m.form = formNone
+		t, cmd := showToast("deleted script", toastOK)
+		m.activeToast = &t
+		return m, cmd
 	case "n", "N", "esc":
 		m.form = formNone
 	}
@@ -404,6 +407,7 @@ func (m Model) handleEditGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
+		name := m.formTargetGroup
 		// Ungroup all connections in this group
 		for i := range m.cfg.Connections {
 			if m.cfg.Connections[i].Group == m.formTargetGroup {
@@ -421,6 +425,9 @@ func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.adjustSidebarViewport()
 		m.form = formNone
+		t, cmd := showToast("deleted group "+name, toastOK)
+		m.activeToast = &t
+		return m, cmd
 	case "n", "N", "esc":
 		m.form = formNone
 	}
@@ -430,6 +437,10 @@ func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
+		name := m.formTarget.String()
+		if c, err := m.cfg.FindByID(m.formTarget); err == nil {
+			name = c.Name
+		}
 		m.cfg.RemoveByID(m.formTarget)
 		config.Save(m.configDir, m.cfg)
 		items := m.sidebarItems()
@@ -438,6 +449,9 @@ func (m Model) handleDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.adjustSidebarViewport()
 		m.form = formNone
+		t, cmd := showToast("deleted "+name, toastOK)
+		m.activeToast = &t
+		return m, cmd
 	case "n", "N", "esc":
 		m.form = formNone
 	}
@@ -544,10 +558,12 @@ func (m Model) handleSyncInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				imported++
 			}
 		}
-		_ = imported
 		config.Save(m.configDir, m.cfg)
 		m.sshConfigChanged = false
 		m.form = formNone
+		t, cmd := showToast(fmt.Sprintf("imported %d hosts", imported), toastOK)
+		m.activeToast = &t
+		return m, cmd
 	}
 	return m, nil
 }
@@ -716,5 +732,7 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 	m.form = formNone
 	m.formError = ""
 	m.jumpSuggestions = nil
-	return m, nil
+	t, cmd := showToast("saved "+name, toastOK)
+	m.activeToast = &t
+	return m, cmd
 }

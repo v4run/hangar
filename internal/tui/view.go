@@ -40,6 +40,33 @@ func (m Model) View() string {
 }
 
 func (m Model) renderStatusBar() string {
+	if m.activeToast != nil {
+		glyph := ""
+		var glyphStyle lipgloss.Style
+		switch m.activeToast.kind {
+		case toastOK:
+			glyph = "\u2713"
+			glyphStyle = successStyle
+		case toastErr:
+			glyph = "\u2717"
+			glyphStyle = errorStyle
+		case toastWarn:
+			glyph = "\u26a0"
+			glyphStyle = warnStyle
+		case toastInfo:
+			glyph = "\u25b8"
+			glyphStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("13"))
+		}
+		left := " " + glyphStyle.Render(glyph) + " " + m.activeToast.text
+		right := "enter:connect  /:find  q:quit"
+		gap := m.width - lipgloss.Width(left) - len(right) - 1
+		if gap < 1 {
+			gap = 1
+		}
+		bar := left + strings.Repeat(" ", gap) + dimStyle.Render(right)
+		return statusBarStyle.Render(bar)
+	}
+
 	var bar string
 	switch {
 	case m.form == formAdd || m.form == formEdit:

@@ -129,6 +129,7 @@ type Model struct {
 	notesInput       string              // notes text being edited
 	jumpSuggestions  []config.Connection // autocomplete suggestions for JumpHost
 	jumpSugCursor    int                 // cursor in jump suggestions
+	activeToast      *toast              // transient status message
 }
 
 type sshExitMsg struct{ err error }

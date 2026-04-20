@@ -20,8 +20,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
+	case clearToastMsg:
+		m.activeToast = nil
+
 	case sshExitMsg:
 		// SSH session ended, back to TUI
+		name := ""
+		items := m.sidebarItems()
+		if m.cursor < len(items) && items[m.cursor].conn != nil {
+			name = items[m.cursor].conn.Name
+		}
+		if msg.err != nil {
+			t, cmd := showToast("disconnected from "+name, toastErr)
+			m.activeToast = &t
+			return m, cmd
+		}
+		if name != "" {
+			t, cmd := showToast("disconnected from "+name, toastOK)
+			m.activeToast = &t
+			return m, cmd
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -248,11 +266,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						targetGroup = items[m.cursor].conn.Group
 					}
 				}
+				pasteCount := 0
 				// Handle cut items — move them
 				for id := range m.cutConnections {
 					c, err := m.cfg.FindByID(id)
 					if err == nil {
 						c.Group = targetGroup
+						pasteCount++
 					}
 				}
 				// Handle copy items — duplicate them
@@ -263,12 +283,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						newConn.ID = uuid.New()
 						newConn.Group = targetGroup
 						m.cfg.Connections = append(m.cfg.Connections, newConn)
+						pasteCount++
 					}
 				}
 				config.Save(m.configDir, m.cfg)
 				m.cutConnections = make(map[uuid.UUID]bool)
 				m.copyConnections = make(map[uuid.UUID]bool)
 				m.adjustSidebarViewport()
+				t, cmd := showToast(fmt.Sprintf("pasted %d items", pasteCount), toastOK)
+				m.activeToast = &t
+				return m, cmd
 			}
 		case "G":
 			// Open global settings form
