@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	"github.com/v4run/hangar/internal/config"
 	sshpkg "github.com/v4run/hangar/internal/ssh"
@@ -18,23 +16,28 @@ func newConnectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			gc, err := config.LoadGlobal(configDir())
+			if err != nil {
+				return err
+			}
 			conn, err := cfg.FindByName(args[0])
 			if err != nil {
 				return err
 			}
 
-			// Resolve jump host
-			var jumpHost *config.Connection
-			if conn.JumpHost != "" {
-				jh, err := cfg.FindByName(conn.JumpHost)
-				if err != nil {
-					return fmt.Errorf("jump host %q: %w", conn.JumpHost, err)
-				}
-				jumpHost = jh
+			jumpHost := sshpkg.ResolveJumpHost(cfg, conn.JumpHost)
+
+			// Merge SSH options
+			var merged *config.SSHOptions
+			useGlobal := conn.UseGlobalSettings == nil || *conn.UseGlobalSettings
+			if useGlobal && gc.SSHOptions != nil {
+				m := config.MergeSSHOptions(gc.SSHOptions, conn.SSHOptions)
+				merged = &m
+			} else if conn.SSHOptions != nil {
+				merged = conn.SSHOptions
 			}
 
-			// Use the ssh package to build args and connect
-			return sshpkg.Connect(conn, jumpHost, nil)
+			return sshpkg.Connect(conn, jumpHost, merged)
 		},
 	}
 

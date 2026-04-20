@@ -55,8 +55,8 @@ func TestAddDuplicate(t *testing.T) {
 
 	cmd2 := NewRootCmd()
 	cmd2.SetArgs([]string{"add", "server", "--host", "10.0.0.2", "--user", "root", "--config", dir})
-	if err := cmd2.Execute(); err == nil {
-		t.Fatal("expected error for duplicate name")
+	if err := cmd2.Execute(); err != nil {
+		t.Fatalf("duplicate names should be allowed: %v", err)
 	}
 }
 
