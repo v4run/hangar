@@ -1,24 +1,44 @@
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type Script struct {
 	Name    string `yaml:"name"`
 	Command string `yaml:"command"`
 }
 
+type SSHOptions struct {
+	ForwardAgent        *bool             `yaml:"forward_agent,omitempty"`
+	LocalForward        []string          `yaml:"local_forward,omitempty"`
+	RemoteForward       []string          `yaml:"remote_forward,omitempty"`
+	ServerAliveInterval *int              `yaml:"server_alive_interval,omitempty"`
+	ServerAliveCountMax *int              `yaml:"server_alive_count_max,omitempty"`
+	StrictHostKeyCheck  string            `yaml:"strict_host_key_checking,omitempty"`
+	RequestTTY          string            `yaml:"request_tty,omitempty"`
+	Compression         *bool             `yaml:"compression,omitempty"`
+	EnvVars             map[string]string `yaml:"env_vars,omitempty"`
+	ExtraOptions        map[string]string `yaml:"extra_options,omitempty"`
+}
+
 type Connection struct {
-	Name                string   `yaml:"name"`
-	Host                string   `yaml:"host"`
-	Port                int      `yaml:"port"`
-	User                string   `yaml:"user"`
-	IdentityFile        string   `yaml:"identity_file,omitempty"`
-	Tags                []string `yaml:"tags,omitempty"`
-	JumpHost            string   `yaml:"jump_host,omitempty"`
-	Group               string   `yaml:"group,omitempty"`
-	SyncedFromSSHConfig bool     `yaml:"synced_from_ssh_config"`
-	Scripts             []Script `yaml:"scripts,omitempty"`
-	Notes               string   `yaml:"notes,omitempty"`
+	ID                  uuid.UUID   `yaml:"id"`
+	Name                string      `yaml:"name"`
+	Host                string      `yaml:"host"`
+	Port                int         `yaml:"port"`
+	User                string      `yaml:"user"`
+	IdentityFile        string      `yaml:"identity_file,omitempty"`
+	Tags                []string    `yaml:"tags,omitempty"`
+	JumpHost            string      `yaml:"jump_host,omitempty"`
+	Group               string      `yaml:"group,omitempty"`
+	SyncedFromSSHConfig bool        `yaml:"synced_from_ssh_config"`
+	Scripts             []Script    `yaml:"scripts,omitempty"`
+	Notes               string      `yaml:"notes,omitempty"`
+	SSHOptions          *SSHOptions `yaml:"ssh_options,omitempty"`
+	UseGlobalSettings   *bool       `yaml:"use_global_settings,omitempty"`
 }
 
 type SSHSync struct {
@@ -34,7 +54,8 @@ type HangarConfig struct {
 }
 
 type GlobalConfig struct {
-	PrefixKey     string `yaml:"prefix_key"`
-	SSHConfigPath string `yaml:"ssh_config_path"`
-	AutoSync      bool   `yaml:"auto_sync"`
+	PrefixKey     string      `yaml:"prefix_key"`
+	SSHConfigPath string      `yaml:"ssh_config_path"`
+	AutoSync      bool        `yaml:"auto_sync"`
+	SSHOptions    *SSHOptions `yaml:"ssh_options,omitempty"`
 }
