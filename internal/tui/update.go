@@ -102,10 +102,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(items)-1 {
 				m.cursor++
 			}
+			m.adjustSidebarViewport()
 		case "k", "up":
 			if m.cursor > 0 {
 				m.cursor--
 			}
+			m.adjustSidebarViewport()
 		case " ":
 			// Toggle group collapse
 			items := m.sidebarItems()
@@ -113,6 +115,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				g := items[m.cursor].group
 				m.collapsed[g] = !m.collapsed[g]
 			}
+			m.adjustSidebarViewport()
 		case "l":
 			// Move focus to scripts pane
 			if m.selectedConnection() != nil {
@@ -265,6 +268,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				config.Save(m.configDir, m.cfg)
 				m.cutConnections = make(map[uuid.UUID]bool)
 				m.copyConnections = make(map[uuid.UUID]bool)
+				m.adjustSidebarViewport()
 			}
 		case "G":
 			// Open global settings form

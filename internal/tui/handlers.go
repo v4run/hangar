@@ -16,17 +16,22 @@ func (m Model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filtering = false
 		m.filterText = ""
 		m.cursor = 0
+		m.sidebarOffset = 0
 	case "enter":
 		m.filtering = false
 		m.cursor = 0
+		m.sidebarOffset = 0
 	case "backspace":
 		if len(m.filterText) > 0 {
 			m.filterText = m.filterText[:len(m.filterText)-1]
 		}
+		m.cursor = 0
+		m.sidebarOffset = 0
 	default:
 		if len(msg.String()) == 1 {
 			m.filterText += msg.String()
 			m.cursor = 0
+			m.sidebarOffset = 0
 		}
 	}
 	return m, nil
@@ -414,6 +419,7 @@ func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor >= len(items) && m.cursor > 0 {
 			m.cursor--
 		}
+		m.adjustSidebarViewport()
 		m.form = formNone
 	case "n", "N", "esc":
 		m.form = formNone
@@ -430,6 +436,7 @@ func (m Model) handleDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor >= len(items) && m.cursor > 0 {
 			m.cursor--
 		}
+		m.adjustSidebarViewport()
 		m.form = formNone
 	case "n", "N", "esc":
 		m.form = formNone

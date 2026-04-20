@@ -9,6 +9,30 @@ import (
 	"github.com/v4run/hangar/internal/config"
 )
 
+// sidebarVisibleRows returns how many sidebar items fit in the viewport.
+func (m Model) sidebarVisibleRows() int {
+	// Reserve lines: filter row, blank line after filter, bottom indicator line, status bar
+	rows := m.height - 4
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
+}
+
+// adjustSidebarViewport ensures the cursor is visible in the sidebar viewport.
+func (m *Model) adjustSidebarViewport() {
+	visibleRows := m.sidebarVisibleRows()
+	if m.cursor < m.sidebarOffset {
+		m.sidebarOffset = m.cursor
+	}
+	if m.cursor >= m.sidebarOffset+visibleRows {
+		m.sidebarOffset = m.cursor - visibleRows + 1
+	}
+	if m.sidebarOffset < 0 {
+		m.sidebarOffset = 0
+	}
+}
+
 func (m Model) filteredConnections() []config.Connection {
 	if m.filterText == "" {
 		return m.cfg.Connections

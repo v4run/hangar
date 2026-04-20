@@ -74,16 +74,33 @@ func (m Model) renderSidebar() string {
 	} else if m.filterText != "" {
 		b.WriteString(dimStyle.Render("/ " + m.filterText))
 	}
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
 	conns := m.filteredConnections()
 	items := m.sidebarItems()
 	if len(items) == 0 {
+		b.WriteString("\n")
 		b.WriteString(dimStyle.Render("  no connections"))
 		return b.String()
 	}
 
-	for i, item := range items {
+	visibleRows := m.sidebarVisibleRows()
+
+	// Up indicator
+	if m.sidebarOffset > 0 {
+		b.WriteString(dimStyle.Render(" ▲"))
+	}
+	b.WriteString("\n")
+
+	// Determine visible slice
+	start := m.sidebarOffset
+	end := start + visibleRows
+	if end > len(items) {
+		end = len(items)
+	}
+
+	for i := start; i < end; i++ {
+		item := items[i]
 		isCursor := m.focus == focusSidebar && i == m.cursor
 
 		if item.isGroup {
@@ -122,6 +139,12 @@ func (m Model) renderSidebar() string {
 			}
 		}
 		b.WriteString("\n")
+	}
+
+	// Down indicator
+	if end < len(items) {
+		remaining := len(items) - end
+		b.WriteString(dimStyle.Render(fmt.Sprintf(" [%d more ↓]", remaining)))
 	}
 
 	return b.String()

@@ -102,6 +102,7 @@ type Model struct {
 	height           int
 	focus            focus
 	cursor           int
+	sidebarOffset    int // index of first visible item in sidebar viewport
 	sshConfigChanged bool
 	filterText       string
 	filtering        bool
