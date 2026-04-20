@@ -1541,10 +1541,11 @@ func (m Model) renderForm() string {
 	b.WriteString(headerStyle.Render("Advanced SSH Options"))
 	b.WriteString("\n")
 
+	advLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(10)
 	for i := fieldForwardAgent; i < fieldAdvancedCount; i++ {
 		value := m.formFields[i]
 		idx := i - fieldForwardAgent
-		label := labelStyle.Render(strings.ToLower(advancedFieldLabels[idx]))
+		label := advLabelStyle.Render(strings.ToLower(advancedFieldLabels[idx]))
 		if i == m.formCursor {
 			b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
 		} else {
@@ -1606,13 +1607,14 @@ func (m Model) renderGlobalSettings() string {
 	b.WriteString(titleStyle.Render("Global SSH Settings"))
 	b.WriteString("\n\n")
 
+	advLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(10)
 	for i := fieldForwardAgent; i < fieldAdvancedCount; i++ {
 		if i == fieldUseGlobalSettings {
 			continue // skip UseGlobal in global settings
 		}
 		value := m.formFields[i]
 		idx := i - fieldForwardAgent
-		label := labelStyle.Render(strings.ToLower(advancedFieldLabels[idx]))
+		label := advLabelStyle.Render(strings.ToLower(advancedFieldLabels[idx]))
 		if i == m.formCursor {
 			b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
 		} else {
