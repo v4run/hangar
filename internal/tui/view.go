@@ -73,13 +73,21 @@ func (m Model) renderStatusBar() string {
 		bar = cursorStyle.Render(" -- VISUAL -- ") + dimStyle.Render("  j/k:extend  x:cut  y:copy  esc:cancel")
 		return statusBarStyle.Render(bar)
 	case m.form == formAdd || m.form == formEdit:
-		bar = " tab:next  shift+tab:prev  enter:save  esc:cancel"
+		if m.formEditing {
+			bar = " " + cursorStyle.Render("-- INSERT --") + "  enter:confirm  esc:discard  ctrl+s:save"
+		} else {
+			bar = " j/k:navigate  h/l:toggle  enter:edit  ctrl+s:save  esc:cancel"
+		}
 	case m.form == formDelete || m.form == formDeleteScript || m.form == formDeleteGroup:
 		bar = " y:confirm  esc:cancel"
 	case m.form == formAddGroup || m.form == formEditGroup:
 		bar = " enter:save  esc:cancel"
 	case m.form == formGlobalSettings:
-		bar = " tab:next  shift+tab:prev  enter:save  esc:cancel"
+		if m.formEditing {
+			bar = " " + cursorStyle.Render("-- INSERT --") + "  enter:confirm  esc:discard  ctrl+s:save"
+		} else {
+			bar = " j/k:navigate  h/l:toggle  enter:edit  ctrl+s:save  esc:cancel"
+		}
 	case m.form == formTag:
 		bar = " enter:save  esc:cancel  (prefix with - to remove)"
 	case m.form == formPasteConfirm:
@@ -383,7 +391,11 @@ func (m Model) renderForm() string {
 
 		label := labelStyle.Render(strings.ToLower(fieldLabels[i]))
 		if i == m.formCursor {
-			b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+			if m.formEditing {
+				b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+			} else {
+				b.WriteString(activeFieldStyle.Render("> ") + label + " " + selectedStyle.Render(value))
+			}
 		} else {
 			b.WriteString("  " + label + " " + normalStyle.Render(value))
 		}
@@ -431,11 +443,20 @@ func (m Model) renderForm() string {
 		} else {
 			// Free text field
 			if i == m.formCursor {
-				if value == "" {
-					ph := fieldPlaceholders[i]
-					b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
+				if m.formEditing {
+					if value == "" {
+						ph := fieldPlaceholders[i]
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
+					} else {
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+					}
 				} else {
-					b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+					if value == "" {
+						ph := fieldPlaceholders[i]
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph))
+					} else {
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + selectedStyle.Render(value))
+					}
 				}
 			} else {
 				if value == "" {
@@ -533,11 +554,20 @@ func (m Model) renderGlobalSettings() string {
 			}
 		} else {
 			if i == m.formCursor {
-				if value == "" {
-					ph := fieldPlaceholders[i]
-					b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
+				if m.formEditing {
+					if value == "" {
+						ph := fieldPlaceholders[i]
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
+					} else {
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+					}
 				} else {
-					b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+					if value == "" {
+						ph := fieldPlaceholders[i]
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph))
+					} else {
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + selectedStyle.Render(value))
+					}
 				}
 			} else {
 				if value == "" {

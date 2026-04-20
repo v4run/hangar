@@ -117,6 +117,8 @@ type Model struct {
 	form             formMode
 	formFields       []string            // field values
 	formCursor       int                 // which field is focused
+	formEditing      bool                // true when actively editing a text field
+	formEditBuf      string              // snapshot of field value before editing (for esc to discard)
 	formError        string              // validation error message
 	formTarget       uuid.UUID           // connection ID being edited/deleted/tagged
 	formTargetGroup  string              // group name being edited/deleted

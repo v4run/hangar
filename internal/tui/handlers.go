@@ -40,10 +40,93 @@ func (m Model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.formEditing {
+		return m.handleFormEditMode(msg)
+	}
+	return m.handleFormNavMode(msg)
+}
+
+// handleFormNavMode handles form input when navigating fields (not editing).
+func (m Model) handleFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.form = formNone
 		m.jumpSuggestions = nil
+	case "j", "down", "tab":
+		m.formCursor = (m.formCursor + 1) % fieldAdvancedCount
+		m.jumpSuggestions = nil
+		m.jumpSugCursor = 0
+	case "k", "up", "shift+tab":
+		m.formCursor = (m.formCursor - 1 + fieldAdvancedCount) % fieldAdvancedCount
+		m.jumpSuggestions = nil
+		m.jumpSugCursor = 0
+	case "l":
+		// Cycle forward on constrained fields
+		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+			current := m.formFields[m.formCursor]
+			next := opts[0]
+			for i, o := range opts {
+				if o == current && i+1 < len(opts) {
+					next = opts[i+1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = next
+		}
+	case "h":
+		// Cycle backward on constrained fields
+		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+			current := m.formFields[m.formCursor]
+			prev := opts[len(opts)-1]
+			for i, o := range opts {
+				if o == current && i > 0 {
+					prev = opts[i-1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = prev
+		}
+	case "enter":
+		// On cycle fields, do nothing (use h/l)
+		if _, ok := fieldCycleOptions[m.formCursor]; ok {
+			return m, nil
+		}
+		// Enter edit mode for free text fields
+		m.formEditing = true
+		m.formEditBuf = m.formFields[m.formCursor]
+		if m.formCursor == fieldJump {
+			m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
+			m.jumpSugCursor = 0
+		}
+	case "ctrl+s":
+		return m.saveForm()
+	}
+	return m, nil
+}
+
+// handleFormEditMode handles form input when editing a text field.
+func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		// Discard changes, revert to snapshot
+		m.formFields[m.formCursor] = m.formEditBuf
+		m.formEditing = false
+		m.jumpSuggestions = nil
+	case "enter":
+		// If on JumpHost with suggestions, select the highlighted one
+		if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 && m.jumpSugCursor >= 0 && m.jumpSugCursor < len(m.jumpSuggestions) {
+			selected := m.jumpSuggestions[m.jumpSugCursor]
+			m.formFields[fieldJump] = selected.Name
+			m.jumpSuggestions = nil
+			m.jumpSugCursor = 0
+			return m, nil
+		}
+		// Confirm edit, return to nav mode
+		m.formEditing = false
+		m.jumpSuggestions = nil
+	case "ctrl+s":
+		m.formEditing = false
+		return m.saveForm()
 	case "ctrl+n":
 		if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 {
 			m.jumpSugCursor = (m.jumpSugCursor + 1) % len(m.jumpSuggestions)
@@ -54,49 +137,8 @@ func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.jumpSugCursor = (m.jumpSugCursor - 1 + len(m.jumpSuggestions)) % len(m.jumpSuggestions)
 			return m, nil
 		}
-	case "tab", "down":
-		m.formCursor = (m.formCursor + 1) % fieldAdvancedCount
-		m.jumpSuggestions = nil
-		m.jumpSugCursor = 0
-	case "shift+tab", "up":
-		m.formCursor = (m.formCursor - 1 + fieldAdvancedCount) % fieldAdvancedCount
-		m.jumpSuggestions = nil
-		m.jumpSugCursor = 0
-	case "enter":
-		// If on JumpHost with suggestions, select the highlighted one
-		if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 && m.jumpSugCursor >= 0 && m.jumpSugCursor < len(m.jumpSuggestions) {
-			selected := m.jumpSuggestions[m.jumpSugCursor]
-			m.formFields[fieldJump] = selected.Name
-			m.jumpSuggestions = nil
-			m.jumpSugCursor = 0
-			return m, nil
-		}
-		return m.saveForm()
-	case " ":
-		// For cycle fields, space cycles through options
-		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
-			current := m.formFields[m.formCursor]
-			next := opts[0]
-			for i, o := range opts {
-				if o == current && i+1 < len(opts) {
-					next = opts[i+1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = next
-			return m, nil
-		}
-		// Otherwise treat space as a character
-		if m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += " "
-		}
 	case "backspace":
 		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
-			// For cycle fields, backspace clears the value
-			if _, ok := fieldCycleOptions[m.formCursor]; ok {
-				m.formFields[m.formCursor] = ""
-				return m, nil
-			}
 			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
 			if m.formCursor == fieldJump {
 				m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
@@ -104,19 +146,6 @@ func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	default:
-		// For cycle fields, any key cycles through options
-		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
-			current := m.formFields[m.formCursor]
-			next := opts[0]
-			for i, o := range opts {
-				if o == current && i+1 < len(opts) {
-					next = opts[i+1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = next
-			return m, nil
-		}
 		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
 			m.formFields[m.formCursor] += msg.String()
 			if m.formCursor == fieldJump {
@@ -738,10 +767,17 @@ func (m Model) uniqueName(name string) string {
 }
 
 func (m Model) handleGlobalSettingsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.formEditing {
+		return m.handleGlobalSettingsEditMode(msg)
+	}
+	return m.handleGlobalSettingsNavMode(msg)
+}
+
+func (m Model) handleGlobalSettingsNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.form = formNone
-	case "tab", "down":
+	case "j", "down", "tab":
 		m.formCursor++
 		if m.formCursor == fieldUseGlobalSettings {
 			m.formCursor++
@@ -749,7 +785,7 @@ func (m Model) handleGlobalSettingsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.formCursor >= fieldAdvancedCount {
 			m.formCursor = fieldForwardAgent
 		}
-	case "shift+tab", "up":
+	case "k", "up", "shift+tab":
 		m.formCursor--
 		if m.formCursor == fieldUseGlobalSettings {
 			m.formCursor--
@@ -757,48 +793,69 @@ func (m Model) handleGlobalSettingsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.formCursor < fieldForwardAgent {
 			m.formCursor = fieldExtraOptions
 		}
+	case "l":
+		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+			current := m.formFields[m.formCursor]
+			next := opts[0]
+			for i, o := range opts {
+				if o == current && i+1 < len(opts) {
+					next = opts[i+1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = next
+		}
+	case "h":
+		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+			current := m.formFields[m.formCursor]
+			prev := opts[len(opts)-1]
+			for i, o := range opts {
+				if o == current && i > 0 {
+					prev = opts[i-1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = prev
+		}
 	case "enter":
+		if _, ok := fieldCycleOptions[m.formCursor]; ok {
+			return m, nil
+		}
+		m.formEditing = true
+		m.formEditBuf = m.formFields[m.formCursor]
+	case "ctrl+s":
 		opts, _ := parseSSHOptionsFromFields(m.formFields)
 		m.globalCfg.SSHOptions = opts
 		config.SaveGlobal(m.configDir, m.globalCfg)
+		t, cmd := showToast("global settings saved", toastOK)
+		m.activeToast = &t
 		m.form = formNone
-	case " ":
-		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
-			current := m.formFields[m.formCursor]
-			next := opts[0]
-			for i, o := range opts {
-				if o == current && i+1 < len(opts) {
-					next = opts[i+1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = next
-			return m, nil
-		}
-		if m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += " "
-		}
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m Model) handleGlobalSettingsEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.formFields[m.formCursor] = m.formEditBuf
+		m.formEditing = false
+	case "enter":
+		m.formEditing = false
+	case "ctrl+s":
+		m.formEditing = false
+		opts, _ := parseSSHOptionsFromFields(m.formFields)
+		m.globalCfg.SSHOptions = opts
+		config.SaveGlobal(m.configDir, m.globalCfg)
+		t, cmd := showToast("global settings saved", toastOK)
+		m.activeToast = &t
+		m.form = formNone
+		return m, cmd
 	case "backspace":
 		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
-			if _, ok := fieldCycleOptions[m.formCursor]; ok {
-				m.formFields[m.formCursor] = ""
-				return m, nil
-			}
 			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
 		}
 	default:
-		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
-			current := m.formFields[m.formCursor]
-			next := opts[0]
-			for i, o := range opts {
-				if o == current && i+1 < len(opts) {
-					next = opts[i+1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = next
-			return m, nil
-		}
 		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
 			m.formFields[m.formCursor] += msg.String()
 		}
