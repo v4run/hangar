@@ -383,7 +383,7 @@ func (m Model) renderForm() string {
 
 		label := labelStyle.Render(strings.ToLower(fieldLabels[i]))
 		if i == m.formCursor {
-			b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(fieldLabels[i])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+			b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
 		} else {
 			b.WriteString("  " + label + " " + normalStyle.Render(value))
 		}
@@ -419,7 +419,7 @@ func (m Model) renderForm() string {
 		if opts, ok := fieldCycleOptions[i]; ok {
 			// Render as cycle selector
 			if i == m.formCursor {
-				b.WriteString(activeFieldStyle.Render("> " + strings.ToLower(advancedFieldLabels[idx])) + " ")
+				b.WriteString(activeFieldStyle.Render("> ") + label + " ")
 				b.WriteString(renderCycleOptions(opts, value))
 			} else {
 				display := value
@@ -433,9 +433,9 @@ func (m Model) renderForm() string {
 			if i == m.formCursor {
 				if value == "" {
 					ph := fieldPlaceholders[i]
-					b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
+					b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
 				} else {
-					b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+					b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
 				}
 			} else {
 				if value == "" {
@@ -522,7 +522,7 @@ func (m Model) renderGlobalSettings() string {
 		label := advLabelStyle.Render(strings.ToLower(advancedFieldLabels[idx]))
 		if opts, ok := fieldCycleOptions[i]; ok {
 			if i == m.formCursor {
-				b.WriteString(activeFieldStyle.Render("> " + strings.ToLower(advancedFieldLabels[idx])) + " ")
+				b.WriteString(activeFieldStyle.Render("> ") + label + " ")
 				b.WriteString(renderCycleOptions(opts, value))
 			} else {
 				display := value
@@ -535,9 +535,9 @@ func (m Model) renderGlobalSettings() string {
 			if i == m.formCursor {
 				if value == "" {
 					ph := fieldPlaceholders[i]
-					b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
+					b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
 				} else {
-					b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+					b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
 				}
 			} else {
 				if value == "" {
@@ -568,7 +568,7 @@ func (m Model) renderScriptForm() string {
 
 	// Name field
 	if m.scriptField == 0 {
-		b.WriteString(activeFieldStyle.Render("> name") + " " + normalStyle.Render(m.scriptName) + cursorStyle.Render("_"))
+		b.WriteString(activeFieldStyle.Render("> ") + labelStyle.Render("name") + " " + normalStyle.Render(m.scriptName) + cursorStyle.Render("_"))
 	} else {
 		b.WriteString("  " + labelStyle.Render("name") + " " + normalStyle.Render(m.scriptName))
 	}
@@ -576,9 +576,9 @@ func (m Model) renderScriptForm() string {
 
 	// Command field
 	if m.scriptField == 1 {
-		b.WriteString(activeFieldStyle.Render("> cmd") + "  " + normalStyle.Render(m.scriptCommand) + cursorStyle.Render("_"))
+		b.WriteString(activeFieldStyle.Render("> ") + labelStyle.Render("cmd") + " " + normalStyle.Render(m.scriptCommand) + cursorStyle.Render("_"))
 	} else {
-		b.WriteString("  " + labelStyle.Render("cmd") + "  " + normalStyle.Render(m.scriptCommand))
+		b.WriteString("  " + labelStyle.Render("cmd") + " " + normalStyle.Render(m.scriptCommand))
 	}
 	b.WriteString("\n")
 
