@@ -75,6 +75,16 @@ var advancedFieldLabels = []string{
 	"Envs", "Extra", "UseGlobal",
 }
 
+// fieldCycleOptions defines the valid values for constrained fields.
+// Space cycles forward through the options.
+var fieldCycleOptions = map[int][]string{
+	fieldForwardAgent:      {"", "yes", "no"},
+	fieldCompression:       {"", "yes", "no"},
+	fieldStrictHostKeyCheck: {"", "yes", "no", "accept-new"},
+	fieldRequestTTY:        {"", "yes", "no", "force", "auto"},
+	fieldUseGlobalSettings: {"yes", "no"},
+}
+
 // sidebarItem represents a row in the sidebar — either a group header or a connection.
 type sidebarItem struct {
 	isGroup bool
@@ -1151,11 +1161,43 @@ func (m Model) handleGlobalSettingsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.globalCfg.SSHOptions = opts
 		config.SaveGlobal(m.configDir, m.globalCfg)
 		m.form = formNone
+	case " ":
+		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+			current := m.formFields[m.formCursor]
+			next := opts[0]
+			for i, o := range opts {
+				if o == current && i+1 < len(opts) {
+					next = opts[i+1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = next
+			return m, nil
+		}
+		if m.formCursor < len(m.formFields) {
+			m.formFields[m.formCursor] += " "
+		}
 	case "backspace":
 		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
+			if _, ok := fieldCycleOptions[m.formCursor]; ok {
+				m.formFields[m.formCursor] = ""
+				return m, nil
+			}
 			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
 		}
 	default:
+		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+			current := m.formFields[m.formCursor]
+			next := opts[0]
+			for i, o := range opts {
+				if o == current && i+1 < len(opts) {
+					next = opts[i+1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = next
+			return m, nil
+		}
 		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
 			m.formFields[m.formCursor] += msg.String()
 		}
@@ -1221,8 +1263,31 @@ func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.saveForm()
+	case " ":
+		// For cycle fields, space cycles through options
+		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+			current := m.formFields[m.formCursor]
+			next := opts[0]
+			for i, o := range opts {
+				if o == current && i+1 < len(opts) {
+					next = opts[i+1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = next
+			return m, nil
+		}
+		// Otherwise treat space as a character
+		if m.formCursor < len(m.formFields) {
+			m.formFields[m.formCursor] += " "
+		}
 	case "backspace":
 		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
+			// For cycle fields, backspace clears the value
+			if _, ok := fieldCycleOptions[m.formCursor]; ok {
+				m.formFields[m.formCursor] = ""
+				return m, nil
+			}
 			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
 			if m.formCursor == fieldJump {
 				m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
@@ -1230,6 +1295,19 @@ func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	default:
+		// For cycle fields, any key cycles through options
+		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+			current := m.formFields[m.formCursor]
+			next := opts[0]
+			for i, o := range opts {
+				if o == current && i+1 < len(opts) {
+					next = opts[i+1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = next
+			return m, nil
+		}
 		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
 			m.formFields[m.formCursor] += msg.String()
 			if m.formCursor == fieldJump {
@@ -1546,10 +1624,25 @@ func (m Model) renderForm() string {
 		value := m.formFields[i]
 		idx := i - fieldForwardAgent
 		label := advLabelStyle.Render(strings.ToLower(advancedFieldLabels[idx]))
-		if i == m.formCursor {
-			b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+		if opts, ok := fieldCycleOptions[i]; ok {
+			// Render as cycle selector
+			if i == m.formCursor {
+				b.WriteString(activeFieldStyle.Render("> " + strings.ToLower(advancedFieldLabels[idx])) + " ")
+				b.WriteString(renderCycleOptions(opts, value))
+			} else {
+				display := value
+				if display == "" {
+					display = "-"
+				}
+				b.WriteString("  " + label + " " + normalStyle.Render(display))
+			}
 		} else {
-			b.WriteString("  " + label + " " + normalStyle.Render(value))
+			// Free text field
+			if i == m.formCursor {
+				b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+			} else {
+				b.WriteString("  " + label + " " + normalStyle.Render(value))
+			}
 		}
 		b.WriteString("\n")
 	}
@@ -1615,10 +1708,23 @@ func (m Model) renderGlobalSettings() string {
 		value := m.formFields[i]
 		idx := i - fieldForwardAgent
 		label := advLabelStyle.Render(strings.ToLower(advancedFieldLabels[idx]))
-		if i == m.formCursor {
-			b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+		if opts, ok := fieldCycleOptions[i]; ok {
+			if i == m.formCursor {
+				b.WriteString(activeFieldStyle.Render("> " + strings.ToLower(advancedFieldLabels[idx])) + " ")
+				b.WriteString(renderCycleOptions(opts, value))
+			} else {
+				display := value
+				if display == "" {
+					display = "-"
+				}
+				b.WriteString("  " + label + " " + normalStyle.Render(display))
+			}
 		} else {
-			b.WriteString("  " + label + " " + normalStyle.Render(value))
+			if i == m.formCursor {
+				b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+			} else {
+				b.WriteString("  " + label + " " + normalStyle.Render(value))
+			}
 		}
 		b.WriteString("\n")
 	}
@@ -1667,6 +1773,23 @@ func (m Model) renderTagInput() string {
 	b.WriteString(dimStyle.Render("comma-separated, prefix with - to remove"))
 
 	return b.String()
+}
+
+// renderCycleOptions renders cycle field options with the active one highlighted.
+func renderCycleOptions(opts []string, current string) string {
+	var parts []string
+	for _, o := range opts {
+		display := o
+		if display == "" {
+			display = "-"
+		}
+		if o == current {
+			parts = append(parts, selectedStyle.Render("["+display+"]"))
+		} else {
+			parts = append(parts, dimStyle.Render(" "+display+" "))
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // jumpHostDisplay converts a JumpHost value (which may be a UUID string) to a display name.
