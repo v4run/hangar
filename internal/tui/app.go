@@ -301,7 +301,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						jumpHost = jh
 					}
 				}
-				cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost)
+				cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost, nil)
 				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 					cleanup()
 					return sshExitMsg{err: err}
@@ -790,7 +790,7 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					jumpHost = jh
 				}
 			}
-			sshCmd, cleanup := sshauth.NewSSHCommand(conn, jumpHost)
+			sshCmd, cleanup := sshauth.NewSSHCommand(conn, jumpHost, nil)
 			escapedCmd := strings.ReplaceAll(script.Command, "'", "'\\''")
 			remoteCmd := fmt.Sprintf("bash -l -c '%s; printf \"\\npress any key to continue...\"; read -n 1'", escapedCmd)
 			userHost := sshCmd.Args[len(sshCmd.Args)-1]

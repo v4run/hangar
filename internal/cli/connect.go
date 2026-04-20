@@ -34,7 +34,7 @@ func newConnectCmd() *cobra.Command {
 			}
 
 			// Use the ssh package to build args and connect
-			return sshpkg.Connect(conn, jumpHost)
+			return sshpkg.Connect(conn, jumpHost, nil)
 		},
 	}
 
