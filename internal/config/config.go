@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,18 +24,13 @@ func Load(dir string) (*HangarConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
+	if cfg.Migrate() {
+		_ = Save(dir, &cfg)
+	}
 	return &cfg, nil
 }
 
 func Save(dir string, cfg *HangarConfig) error {
-	seen := make(map[string]bool)
-	for _, c := range cfg.Connections {
-		if seen[c.Name] {
-			return fmt.Errorf("duplicate connection name: %s", c.Name)
-		}
-		seen[c.Name] = true
-	}
-
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
@@ -59,10 +55,8 @@ func (cfg *HangarConfig) Add(conn Connection) error {
 	if conn.Port <= 0 {
 		return fmt.Errorf("port must be positive for connection %q", conn.Name)
 	}
-	for _, c := range cfg.Connections {
-		if c.Name == conn.Name {
-			return fmt.Errorf("connection %q already exists", conn.Name)
-		}
+	if conn.ID == uuid.Nil {
+		conn.ID = uuid.New()
 	}
 	cfg.Connections = append(cfg.Connections, conn)
 	return nil
@@ -78,6 +72,16 @@ func (cfg *HangarConfig) Remove(name string) error {
 	return fmt.Errorf("connection %q not found", name)
 }
 
+func (cfg *HangarConfig) RemoveByID(id uuid.UUID) error {
+	for i, c := range cfg.Connections {
+		if c.ID == id {
+			cfg.Connections = append(cfg.Connections[:i], cfg.Connections[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("connection with ID %s not found", id)
+}
+
 func (cfg *HangarConfig) FindByName(name string) (*Connection, error) {
 	for i := range cfg.Connections {
 		if cfg.Connections[i].Name == name {
@@ -85,6 +89,15 @@ func (cfg *HangarConfig) FindByName(name string) (*Connection, error) {
 		}
 	}
 	return nil, fmt.Errorf("connection %q not found", name)
+}
+
+func (cfg *HangarConfig) FindByID(id uuid.UUID) (*Connection, error) {
+	for i := range cfg.Connections {
+		if cfg.Connections[i].ID == id {
+			return &cfg.Connections[i], nil
+		}
+	}
+	return nil, fmt.Errorf("connection with ID %s not found", id)
 }
 
 func (cfg *HangarConfig) AddTags(name string, tags []string) error {
@@ -135,4 +148,28 @@ func (cfg *HangarConfig) FilterByTag(tag string) []Connection {
 		}
 	}
 	return results
+}
+
+func (cfg *HangarConfig) Migrate() bool {
+	changed := false
+	for i := range cfg.Connections {
+		if cfg.Connections[i].ID == uuid.Nil {
+			cfg.Connections[i].ID = uuid.New()
+			changed = true
+		}
+	}
+	for i := range cfg.Connections {
+		jh := cfg.Connections[i].JumpHost
+		if jh == "" {
+			continue
+		}
+		if _, err := uuid.Parse(jh); err == nil {
+			continue
+		}
+		if target, err := cfg.FindByName(jh); err == nil {
+			cfg.Connections[i].JumpHost = target.ID.String()
+			changed = true
+		}
+	}
+	return changed
 }
