@@ -143,6 +143,12 @@ type Model struct {
 	connectStart     time.Time           // when connection started
 	syncFilterText   string              // filter text in sync list
 	syncFiltering    bool                // whether sync filter is active
+	visualMode       bool                // visual selection mode active
+	visualAnchor     int                 // cursor position when visual mode started
+	tagTokens        []string            // committed tags in the editor
+	tagBuffer        string              // current typing buffer
+	runningScriptIdx int                 // index of script being run (-1 if none)
+	runningIsGlobal  bool                // whether the running script is global
 }
 
 type sshExitMsg struct{ err error }
@@ -159,5 +165,6 @@ func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDi
 		collapsed:        make(map[string]bool),
 		cutConnections:   make(map[uuid.UUID]bool),
 		copyConnections:  make(map[uuid.UUID]bool),
+		runningScriptIdx: -1,
 	}
 }

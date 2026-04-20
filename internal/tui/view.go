@@ -69,6 +69,9 @@ func (m Model) renderStatusBar() string {
 
 	var bar string
 	switch {
+	case m.visualMode:
+		bar = cursorStyle.Render(" -- VISUAL -- ") + dimStyle.Render("  j/k:extend  x:cut  y:copy  esc:cancel")
+		return statusBarStyle.Render(bar)
 	case m.form == formAdd || m.form == formEdit:
 		bar = " tab:next  shift+tab:prev  enter:save  esc:cancel"
 	case m.form == formDelete || m.form == formDeleteScript || m.form == formDeleteGroup:
@@ -187,7 +190,9 @@ func (m Model) renderSidebar() string {
 				indent = "    "
 			}
 			mark := ""
-			if m.cutConnections[item.conn.ID] {
+			if m.isInVisualRange(i) {
+				mark = dimStyle.Render(" \u00b7")
+			} else if m.cutConnections[item.conn.ID] {
 				mark = dimStyle.Render(" ~")
 			} else if m.copyConnections[item.conn.ID] {
 				mark = dimStyle.Render(" +")
@@ -344,6 +349,17 @@ func (m Model) renderMainPane() string {
 			b.WriteString(prefix + nameStyle.Render(s.Name) + badge + "\n")
 			cmdLine := dimStyle.Render("    $ " + s.Command)
 			b.WriteString(cmdLine + "\n")
+			if s.LastRunAt != nil {
+				exitStyle := successStyle
+				if s.LastRunExit != 0 {
+					exitStyle = errorStyle
+				}
+				b.WriteString("    " + dimStyle.Render("last: ") + exitStyle.Render(fmt.Sprintf("exit %d", s.LastRunExit)))
+				b.WriteString(dimStyle.Render(fmt.Sprintf(" \u00b7 %s \u00b7 %s", relativeTime(*s.LastRunAt), formatScriptDuration(s.LastRunDuration))))
+				b.WriteString("\n")
+			} else {
+				b.WriteString("    " + dimStyle.Render("never run") + "\n")
+			}
 		}
 	}
 
@@ -595,31 +611,54 @@ func (m Model) renderNotesForm() string {
 }
 
 func (m Model) renderTagInput() string {
-	// Look up name from UUID for display
-	connName := m.formTarget.String()
-	if c, err := m.cfg.FindByID(m.formTarget); err == nil {
-		connName = c.Name
-	}
-
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Tags: " + connName))
+	name := m.formTarget.String()
+	if c, err := m.cfg.FindByID(m.formTarget); err == nil {
+		name = c.Name
+	}
+	b.WriteString(titleStyle.Render("Tags: " + name))
 	b.WriteString("\n\n")
 
-	if c, err := m.cfg.FindByID(m.formTarget); err == nil && len(c.Tags) > 0 {
-		for i, t := range c.Tags {
-			if i > 0 {
-				b.WriteString(dimStyle.Render(", "))
+	// Render tokens as chips
+	b.WriteString("  ")
+	for _, t := range m.tagTokens {
+		b.WriteString(tagStyle.Render("["+t+"]") + " ")
+	}
+	// Buffer with cursor
+	b.WriteString(normalStyle.Render(m.tagBuffer) + cursorStyle.Render("_"))
+	b.WriteString("\n\n")
+
+	// Show existing tags as suggestions
+	existing := m.allExistingTags()
+	if len(existing) > 0 {
+		b.WriteString(dimStyle.Render("  existing: "))
+		shown := 0
+		for _, t := range existing {
+			// Skip tags already in tokens
+			skip := false
+			for _, tok := range m.tagTokens {
+				if tok == t {
+					skip = true
+					break
+				}
 			}
-			b.WriteString(tagStyle.Render(t))
+			if skip {
+				continue
+			}
+			if shown > 0 {
+				b.WriteString(dimStyle.Render("  "))
+			}
+			b.WriteString(dimStyle.Render(t))
+			shown++
+			if shown >= 10 {
+				break
+			}
 		}
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(activeFieldStyle.Render("> add") + " " + normalStyle.Render(m.tagInput) + cursorStyle.Render("_"))
-	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("comma-separated, prefix with - to remove"))
-
+	b.WriteString(dimStyle.Render("  space/,:add  backspace:remove  tab:complete  enter:save"))
 	return b.String()
 }
 

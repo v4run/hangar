@@ -57,6 +57,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		duration := time.Since(m.connectStart)
 		durStr := formatDuration(duration)
+
+		// Persist script run results
+		if m.runningScriptIdx >= 0 {
+			scriptDuration := time.Since(m.connectStart)
+			exitCode := 0
+			if msg.err != nil {
+				exitCode = 1
+			}
+			now := time.Now()
+
+			conn := m.selectedConnection()
+			if m.runningIsGlobal {
+				gi := m.runningScriptIdx
+				if conn != nil {
+					gi -= len(conn.Scripts)
+				}
+				if gi >= 0 && gi < len(m.cfg.GlobalScripts) {
+					m.cfg.GlobalScripts[gi].LastRunAt = &now
+					m.cfg.GlobalScripts[gi].LastRunDuration = scriptDuration
+					m.cfg.GlobalScripts[gi].LastRunExit = exitCode
+				}
+			} else if conn != nil && m.runningScriptIdx < len(conn.Scripts) {
+				conn.Scripts[m.runningScriptIdx].LastRunAt = &now
+				conn.Scripts[m.runningScriptIdx].LastRunDuration = scriptDuration
+				conn.Scripts[m.runningScriptIdx].LastRunExit = exitCode
+			}
+			config.Save(m.configDir, m.cfg)
+			m.runningScriptIdx = -1
+		}
+
 		if msg.err != nil {
 			text := fmt.Sprintf("connection failed: %s", msg.err)
 			if name != "" {
@@ -98,7 +128,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.formFields[m.formCursor] += pasted
 				}
 			} else if m.form == formTag {
-				m.tagInput += pasted
+				m.tagBuffer += pasted
 			} else if m.form == formAddGroup || m.form == formEditGroup {
 				m.groupNameInput += pasted
 			} else if m.form == formEditNotes {
@@ -148,6 +178,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.form == formPasteConfirm {
 			return m.handlePasteConfirmInput(msg)
+		}
+
+		// Visual mode
+		if m.visualMode {
+			switch msg.String() {
+			case "j", "down":
+				items := m.sidebarItems()
+				if m.cursor < len(items)-1 {
+					m.cursor++
+				}
+				m.adjustSidebarViewport()
+			case "k", "up":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+				m.adjustSidebarViewport()
+			case "x":
+				m.applyVisualAction(true)
+				m.visualMode = false
+			case "y":
+				m.applyVisualAction(false)
+				m.visualMode = false
+			case "esc":
+				m.visualMode = false
+			case "q", "ctrl+c":
+				m.quitting = true
+				return m, tea.Quit
+			}
+			return m, nil
 		}
 
 		// Filtering mode
@@ -366,12 +425,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.populateSSHOptionsFields(m.globalCfg.SSHOptions, nil)
 			m.formCursor = fieldForwardAgent
 			m.formError = ""
+		case "v":
+			if m.selectedConnection() != nil {
+				m.visualMode = true
+				m.visualAnchor = m.cursor
+			}
+		case "J":
+			// Swap current item with the one below
+			items := m.sidebarItems()
+			if m.cursor < len(items)-1 {
+				m.swapSidebarItems(m.cursor, m.cursor+1)
+				m.cursor++
+				m.adjustSidebarViewport()
+			}
+		case "K":
+			// Swap current item with the one above
+			if m.cursor > 0 {
+				m.swapSidebarItems(m.cursor, m.cursor-1)
+				m.cursor--
+				m.adjustSidebarViewport()
+			}
 		case "t":
 			c := m.selectedConnection()
 			if c != nil {
 				m.form = formTag
 				m.formTarget = c.ID
-				m.tagInput = ""
+				m.tagTokens = make([]string, len(c.Tags))
+				copy(m.tagTokens, c.Tags)
+				m.tagBuffer = ""
 			}
 		case "enter":
 			c := m.selectedConnection()

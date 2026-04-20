@@ -370,6 +370,119 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%ds", s)
 }
 
+func (m *Model) applyVisualAction(cut bool) {
+	items := m.sidebarItems()
+	lo := m.visualAnchor
+	hi := m.cursor
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	// Clear existing marks
+	m.cutConnections = make(map[uuid.UUID]bool)
+	m.copyConnections = make(map[uuid.UUID]bool)
+	for i := lo; i <= hi; i++ {
+		if i < len(items) && !items[i].isGroup && items[i].conn != nil {
+			if cut {
+				m.cutConnections[items[i].conn.ID] = true
+			} else {
+				m.copyConnections[items[i].conn.ID] = true
+			}
+		}
+	}
+}
+
+func (m Model) isInVisualRange(idx int) bool {
+	if !m.visualMode {
+		return false
+	}
+	lo := m.visualAnchor
+	hi := m.cursor
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	return idx >= lo && idx <= hi
+}
+
+func (m Model) suggestTag(prefix string) string {
+	lower := strings.ToLower(prefix)
+	seen := make(map[string]bool)
+	for _, t := range m.tagTokens {
+		seen[t] = true
+	}
+	for _, c := range m.cfg.Connections {
+		for _, t := range c.Tags {
+			if !seen[t] && strings.HasPrefix(strings.ToLower(t), lower) {
+				return t
+			}
+		}
+	}
+	return ""
+}
+
+func (m Model) allExistingTags() []string {
+	seen := make(map[string]bool)
+	var tags []string
+	for _, c := range m.cfg.Connections {
+		for _, t := range c.Tags {
+			if !seen[t] {
+				seen[t] = true
+				tags = append(tags, t)
+			}
+		}
+	}
+	return tags
+}
+
+func (m *Model) swapSidebarItems(i, j int) {
+	items := m.sidebarItems()
+	if i >= len(items) || j >= len(items) {
+		return
+	}
+
+	// Can only swap connections (not group headers with connections)
+	itemI := items[i]
+	itemJ := items[j]
+
+	// Both are connections in the same group: swap their positions in cfg.Connections
+	if !itemI.isGroup && !itemJ.isGroup && itemI.conn != nil && itemJ.conn != nil {
+		// Find their indices in cfg.Connections and swap
+		idxI, idxJ := -1, -1
+		for k, c := range m.cfg.Connections {
+			if c.ID == itemI.conn.ID {
+				idxI = k
+			}
+			if c.ID == itemJ.conn.ID {
+				idxJ = k
+			}
+		}
+		if idxI >= 0 && idxJ >= 0 {
+			m.cfg.Connections[idxI], m.cfg.Connections[idxJ] = m.cfg.Connections[idxJ], m.cfg.Connections[idxI]
+			config.Save(m.configDir, m.cfg)
+		}
+	}
+}
+
+func relativeTime(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
+
+func formatScriptDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
 // filteredSyncEntries returns indices of sync entries matching the filter text.
 func (m Model) filteredSyncEntries() []int {
 	if m.syncFilterText == "" {

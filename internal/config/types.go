@@ -7,8 +7,11 @@ import (
 )
 
 type Script struct {
-	Name    string `yaml:"name"`
-	Command string `yaml:"command"`
+	Name            string        `yaml:"name"`
+	Command         string        `yaml:"command"`
+	LastRunAt       *time.Time    `yaml:"last_run_at,omitempty"`
+	LastRunDuration time.Duration `yaml:"last_run_duration,omitempty"`
+	LastRunExit     int           `yaml:"last_run_exit,omitempty"`
 }
 
 type SSHOptions struct {

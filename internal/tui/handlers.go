@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
@@ -179,6 +180,9 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		conn := m.selectedConnection()
 		if m.scriptCursor < len(scripts) && conn != nil {
 			script := scripts[m.scriptCursor]
+			m.runningScriptIdx = m.scriptCursor
+			m.runningIsGlobal = m.isGlobalScript(m.scriptCursor)
+			m.connectStart = time.Now()
 			jumpHost := sshauth.ResolveJumpHost(m.cfg, conn.JumpHost)
 			var opts *config.SSHOptions
 			if conn.UseGlobalSettings == nil || *conn.UseGlobalSettings {
@@ -466,51 +470,58 @@ func (m Model) handleTagInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.form = formNone
 	case "enter":
-		if m.tagInput != "" {
-			c, err := m.cfg.FindByID(m.formTarget)
-			if err != nil {
-				m.form = formNone
-				return m, nil
-			}
-			for _, t := range strings.Split(m.tagInput, ",") {
-				t = strings.TrimSpace(t)
-				if t == "" {
-					continue
-				}
-				if strings.HasPrefix(t, "-") {
-					// Remove tag
-					tag := t[1:]
-					filtered := c.Tags[:0]
-					for _, existing := range c.Tags {
-						if existing != tag {
-							filtered = append(filtered, existing)
-						}
-					}
-					c.Tags = filtered
-				} else {
-					// Add tag if not present
-					found := false
-					for _, existing := range c.Tags {
-						if existing == t {
-							found = true
-							break
-						}
-					}
-					if !found {
-						c.Tags = append(c.Tags, t)
-					}
-				}
-			}
-			config.Save(m.configDir, m.cfg)
+		// Save: set the connection's tags to tagTokens
+		c, err := m.cfg.FindByID(m.formTarget)
+		if err != nil {
+			m.form = formNone
+			return m, nil
 		}
+		// Commit any remaining buffer
+		if buf := strings.TrimSpace(m.tagBuffer); buf != "" {
+			m.tagTokens = append(m.tagTokens, buf)
+			m.tagBuffer = ""
+		}
+		c.Tags = m.tagTokens
+		config.Save(m.configDir, m.cfg)
+		t, cmd := showToast("tags updated", toastOK)
+		m.activeToast = &t
 		m.form = formNone
+		return m, cmd
+	case " ", ",":
+		// Commit buffer as a token
+		buf := strings.TrimSpace(m.tagBuffer)
+		if buf != "" {
+			// Check for duplicate
+			exists := false
+			for _, t := range m.tagTokens {
+				if t == buf {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				m.tagTokens = append(m.tagTokens, buf)
+			}
+			m.tagBuffer = ""
+		}
 	case "backspace":
-		if len(m.tagInput) > 0 {
-			m.tagInput = m.tagInput[:len(m.tagInput)-1]
+		if len(m.tagBuffer) > 0 {
+			m.tagBuffer = m.tagBuffer[:len(m.tagBuffer)-1]
+		} else if len(m.tagTokens) > 0 {
+			// Pop last token
+			m.tagTokens = m.tagTokens[:len(m.tagTokens)-1]
+		}
+	case "tab":
+		// Autocomplete from existing tags across all connections
+		if m.tagBuffer != "" {
+			suggestion := m.suggestTag(m.tagBuffer)
+			if suggestion != "" {
+				m.tagBuffer = suggestion
+			}
 		}
 	default:
 		if len(msg.String()) == 1 {
-			m.tagInput += msg.String()
+			m.tagBuffer += msg.String()
 		}
 	}
 	return m, nil
