@@ -1193,13 +1193,33 @@ func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.form = formNone
 		m.jumpSuggestions = nil
+	case "ctrl+n":
+		if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 {
+			m.jumpSugCursor = (m.jumpSugCursor + 1) % len(m.jumpSuggestions)
+			return m, nil
+		}
+	case "ctrl+p":
+		if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 {
+			m.jumpSugCursor = (m.jumpSugCursor - 1 + len(m.jumpSuggestions)) % len(m.jumpSuggestions)
+			return m, nil
+		}
 	case "tab", "down":
 		m.formCursor = (m.formCursor + 1) % fieldAdvancedCount
 		m.jumpSuggestions = nil
+		m.jumpSugCursor = 0
 	case "shift+tab", "up":
 		m.formCursor = (m.formCursor - 1 + fieldAdvancedCount) % fieldAdvancedCount
 		m.jumpSuggestions = nil
+		m.jumpSugCursor = 0
 	case "enter":
+		// If on JumpHost with suggestions, select the highlighted one
+		if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 && m.jumpSugCursor >= 0 && m.jumpSugCursor < len(m.jumpSuggestions) {
+			selected := m.jumpSuggestions[m.jumpSugCursor]
+			m.formFields[fieldJump] = selected.Name
+			m.jumpSuggestions = nil
+			m.jumpSugCursor = 0
+			return m, nil
+		}
 		return m.saveForm()
 	case "backspace":
 		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
@@ -1492,18 +1512,19 @@ func (m Model) renderForm() string {
 
 	// JumpHost suggestions
 	if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 {
-		b.WriteString(dimStyle.Render("  suggestions: "))
 		for i, s := range m.jumpSuggestions {
 			if i > 5 {
-				b.WriteString(dimStyle.Render("..."))
 				break
 			}
-			if i > 0 {
-				b.WriteString(dimStyle.Render(", "))
+			prefix := "    "
+			nameStyle := dimStyle
+			if i == m.jumpSugCursor {
+				prefix = "  > "
+				nameStyle = selectedStyle
 			}
-			b.WriteString(normalStyle.Render(s.Name))
+			b.WriteString(prefix + nameStyle.Render(s.Name) + dimStyle.Render(fmt.Sprintf(" (%s@%s)", s.User, s.Host)) + "\n")
 		}
-		b.WriteString("\n")
+		b.WriteString(dimStyle.Render("  ctrl+n/p: navigate  enter: select") + "\n")
 	}
 
 	// Advanced settings section
