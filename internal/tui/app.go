@@ -78,11 +78,21 @@ var advancedFieldLabels = []string{
 // fieldCycleOptions defines the valid values for constrained fields.
 // Space cycles forward through the options.
 var fieldCycleOptions = map[int][]string{
-	fieldForwardAgent:      {"", "yes", "no"},
-	fieldCompression:       {"", "yes", "no"},
+	fieldForwardAgent:       {"", "yes", "no"},
+	fieldCompression:        {"", "yes", "no"},
 	fieldStrictHostKeyCheck: {"", "yes", "no", "accept-new"},
-	fieldRequestTTY:        {"", "yes", "no", "force", "auto"},
-	fieldUseGlobalSettings: {"yes", "no"},
+	fieldRequestTTY:         {"", "yes", "no", "force", "auto"},
+	fieldUseGlobalSettings:  {"yes", "no"},
+}
+
+// fieldPlaceholders shows example values for free text advanced fields.
+var fieldPlaceholders = map[int]string{
+	fieldLocalForward:        "8080:localhost:80, 9090:localhost:90",
+	fieldRemoteForward:       "3000:localhost:3000",
+	fieldServerAliveInterval: "60",
+	fieldServerAliveCountMax: "3",
+	fieldEnvVars:             "KEY=value, ANOTHER=val",
+	fieldExtraOptions:        "TCPKeepAlive=yes, LogLevel=INFO",
 }
 
 // sidebarItem represents a row in the sidebar — either a group header or a connection.
@@ -1639,9 +1649,18 @@ func (m Model) renderForm() string {
 		} else {
 			// Free text field
 			if i == m.formCursor {
-				b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+				if value == "" {
+					ph := fieldPlaceholders[i]
+					b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
+				} else {
+					b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+				}
 			} else {
-				b.WriteString("  " + label + " " + normalStyle.Render(value))
+				if value == "" {
+					b.WriteString("  " + label + " " + dimStyle.Render(fieldPlaceholders[i]))
+				} else {
+					b.WriteString("  " + label + " " + normalStyle.Render(value))
+				}
 			}
 		}
 		b.WriteString("\n")
@@ -1721,9 +1740,18 @@ func (m Model) renderGlobalSettings() string {
 			}
 		} else {
 			if i == m.formCursor {
-				b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+				if value == "" {
+					ph := fieldPlaceholders[i]
+					b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
+				} else {
+					b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+				}
 			} else {
-				b.WriteString("  " + label + " " + normalStyle.Render(value))
+				if value == "" {
+					b.WriteString("  " + label + " " + dimStyle.Render(fieldPlaceholders[i]))
+				} else {
+					b.WriteString("  " + label + " " + normalStyle.Render(value))
+				}
 			}
 		}
 		b.WriteString("\n")
