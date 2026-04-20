@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 const testSSHConfig = `Host prod-server
@@ -44,6 +46,12 @@ func TestParseSSHConfig(t *testing.T) {
 
 	if conns[1].Port != 22 {
 		t.Fatalf("expected default port 22, got %d", conns[1].Port)
+	}
+
+	for _, c := range conns {
+		if c.ID == uuid.Nil {
+			t.Fatalf("connection %s should have a UUID", c.Name)
+		}
 	}
 }
 
@@ -152,6 +160,9 @@ func TestSyncFromSSHConfig(t *testing.T) {
 	c, _ := cfg.FindByName("prod-server")
 	if !c.SyncedFromSSHConfig {
 		t.Fatal("synced entry should be marked")
+	}
+	if c.ID == uuid.Nil {
+		t.Fatal("synced entry should have a UUID")
 	}
 
 	my, _ := cfg.FindByName("my-server")

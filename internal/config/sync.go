@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func HashFile(path string) (string, error) {
@@ -78,6 +80,7 @@ func ParseSSHConfig(path string) ([]Connection, error) {
 				conns = append(conns, *current)
 			}
 			current = &Connection{
+				ID:                  uuid.New(),
 				Name:                val,
 				SyncedFromSSHConfig: true,
 			}
