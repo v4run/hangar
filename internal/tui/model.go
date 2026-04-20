@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
 )
@@ -29,6 +31,7 @@ const (
 	formEditNotes
 	formEditGroup
 	formGlobalSettings
+	formPasteConfirm
 )
 
 const (
@@ -131,9 +134,20 @@ type Model struct {
 	jumpSugCursor    int                 // cursor in jump suggestions
 	activeToast      *toast              // transient status message
 	showHelp         bool                // help overlay visible
+	pasteCollisions  []string            // names that conflict in target group
+	pasteTargetGroup string              // where items are being pasted
+	pasteItems       []uuid.UUID         // items to paste
+	pasteIsCut       bool                // true = cut (move), false = copy (duplicate)
+	connecting       bool                // connect banner visible
+	connectTarget    *config.Connection  // connection being connected to
+	connectStart     time.Time           // when connection started
+	syncFilterText   string              // filter text in sync list
+	syncFiltering    bool                // whether sync filter is active
 }
 
 type sshExitMsg struct{ err error }
+
+type connectReadyMsg struct{}
 
 func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDir string, sshChanged bool) Model {
 	return Model{

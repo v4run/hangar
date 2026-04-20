@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
@@ -355,4 +357,36 @@ func boolToYesNo(b bool) string {
 
 func yesNoBool(s string) bool {
 	return strings.ToLower(s) == "yes" || strings.ToLower(s) == "y" || strings.ToLower(s) == "true"
+}
+
+// formatDuration returns a human-readable duration string like "1m 23s".
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	if m > 0 {
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
+// filteredSyncEntries returns indices of sync entries matching the filter text.
+func (m Model) filteredSyncEntries() []int {
+	if m.syncFilterText == "" {
+		indices := make([]int, len(m.syncEntries))
+		for i := range indices {
+			indices[i] = i
+		}
+		return indices
+	}
+	var indices []int
+	lower := strings.ToLower(m.syncFilterText)
+	for i, e := range m.syncEntries {
+		if strings.Contains(strings.ToLower(e.Name), lower) ||
+			strings.Contains(strings.ToLower(e.Host), lower) ||
+			strings.Contains(strings.ToLower(e.User), lower) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
 }

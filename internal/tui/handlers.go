@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
 	sshauth "github.com/v4run/hangar/internal/ssh"
 )
@@ -516,28 +517,90 @@ func (m Model) handleTagInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleSyncInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Sync filter mode
+	if m.syncFiltering {
+		switch msg.String() {
+		case "esc":
+			m.syncFiltering = false
+			m.syncFilterText = ""
+		case "enter":
+			m.syncFiltering = false
+		case "backspace":
+			if len(m.syncFilterText) > 0 {
+				m.syncFilterText = m.syncFilterText[:len(m.syncFilterText)-1]
+			}
+		default:
+			if len(msg.String()) == 1 {
+				m.syncFilterText += msg.String()
+			}
+		}
+		// Adjust cursor to stay within filtered entries
+		filtered := m.filteredSyncEntries()
+		if len(filtered) > 0 {
+			found := false
+			for _, idx := range filtered {
+				if idx == m.syncCursor {
+					found = true
+					break
+				}
+			}
+			if !found {
+				m.syncCursor = filtered[0]
+			}
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "esc":
 		m.form = formNone
+		m.syncFilterText = ""
+		m.syncFiltering = false
+	case "/":
+		m.syncFiltering = true
+		m.syncFilterText = ""
 	case "j", "down":
-		if m.syncCursor < len(m.syncEntries)-1 {
-			m.syncCursor++
+		filtered := m.filteredSyncEntries()
+		if len(filtered) == 0 {
+			break
+		}
+		// Find current position in filtered list and move to next
+		for i, idx := range filtered {
+			if idx == m.syncCursor {
+				if i+1 < len(filtered) {
+					m.syncCursor = filtered[i+1]
+				}
+				break
+			}
 		}
 	case "k", "up":
-		if m.syncCursor > 0 {
-			m.syncCursor--
+		filtered := m.filteredSyncEntries()
+		if len(filtered) == 0 {
+			break
+		}
+		for i, idx := range filtered {
+			if idx == m.syncCursor {
+				if i-1 >= 0 {
+					m.syncCursor = filtered[i-1]
+				}
+				break
+			}
 		}
 	case " ":
 		if m.syncCursor < len(m.syncSelected) {
 			m.syncSelected[m.syncCursor] = !m.syncSelected[m.syncCursor]
 		}
 	case "a":
-		for i := range m.syncSelected {
-			m.syncSelected[i] = true
+		// Select all visible (filtered) entries
+		filtered := m.filteredSyncEntries()
+		for _, idx := range filtered {
+			m.syncSelected[idx] = true
 		}
 	case "n":
-		for i := range m.syncSelected {
-			m.syncSelected[i] = false
+		// Deselect all visible (filtered) entries
+		filtered := m.filteredSyncEntries()
+		for _, idx := range filtered {
+			m.syncSelected[idx] = false
 		}
 	case "enter":
 		imported := 0
@@ -562,12 +625,105 @@ func (m Model) handleSyncInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		config.Save(m.configDir, m.cfg)
 		m.sshConfigChanged = false
+		m.syncFilterText = ""
+		m.syncFiltering = false
 		m.form = formNone
 		t, cmd := showToast(fmt.Sprintf("imported %d hosts", imported), toastOK)
 		m.activeToast = &t
 		return m, cmd
 	}
 	return m, nil
+}
+
+func (m Model) handlePasteConfirmInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "r":
+		// Rename: append "-copy" (or "-copy-2", etc.) to conflicting names
+		m.executePaste(true)
+		t, cmd := showToast(fmt.Sprintf("pasted %d items (renamed)", len(m.pasteItems)), toastOK)
+		m.activeToast = &t
+		m.form = formNone
+		return m, cmd
+	case "s":
+		// Skip: paste only non-conflicting items
+		m.executePasteSkipCollisions()
+		t, cmd := showToast("pasted (skipped conflicts)", toastOK)
+		m.activeToast = &t
+		m.form = formNone
+		return m, cmd
+	case "esc":
+		m.form = formNone
+	}
+	return m, nil
+}
+
+func (m *Model) executePaste(rename bool) {
+	for _, id := range m.pasteItems {
+		c, err := m.cfg.FindByID(id)
+		if err != nil {
+			continue
+		}
+		if m.pasteIsCut {
+			c.Group = m.pasteTargetGroup
+		} else {
+			newConn := *c
+			newConn.ID = uuid.New()
+			newConn.Group = m.pasteTargetGroup
+			if rename && m.isNameCollision(newConn.Name) {
+				newConn.Name = m.uniqueName(newConn.Name)
+			}
+			m.cfg.Connections = append(m.cfg.Connections, newConn)
+		}
+	}
+	config.Save(m.configDir, m.cfg)
+	m.cutConnections = make(map[uuid.UUID]bool)
+	m.copyConnections = make(map[uuid.UUID]bool)
+}
+
+func (m *Model) executePasteSkipCollisions() {
+	collisionSet := make(map[string]bool)
+	for _, name := range m.pasteCollisions {
+		collisionSet[name] = true
+	}
+	for _, id := range m.pasteItems {
+		c, err := m.cfg.FindByID(id)
+		if err != nil {
+			continue
+		}
+		if collisionSet[c.Name] {
+			continue // skip
+		}
+		if m.pasteIsCut {
+			c.Group = m.pasteTargetGroup
+		} else {
+			newConn := *c
+			newConn.ID = uuid.New()
+			newConn.Group = m.pasteTargetGroup
+			m.cfg.Connections = append(m.cfg.Connections, newConn)
+		}
+	}
+	config.Save(m.configDir, m.cfg)
+	m.cutConnections = make(map[uuid.UUID]bool)
+	m.copyConnections = make(map[uuid.UUID]bool)
+}
+
+func (m Model) isNameCollision(name string) bool {
+	for _, c := range m.cfg.Connections {
+		if c.Name == name && c.Group == m.pasteTargetGroup {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) uniqueName(name string) string {
+	candidate := name + "-copy"
+	n := 2
+	for m.isNameCollision(candidate) {
+		candidate = fmt.Sprintf("%s-copy-%d", name, n)
+		n++
+	}
+	return candidate
 }
 
 func (m Model) handleGlobalSettingsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

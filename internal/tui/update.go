@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
@@ -23,23 +24,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearToastMsg:
 		m.activeToast = nil
 
+	case connectReadyMsg:
+		m.connecting = false
+		if m.connectTarget != nil {
+			c := m.connectTarget
+			jumpHost := sshauth.ResolveJumpHost(m.cfg, c.JumpHost)
+			var opts *config.SSHOptions
+			if c.UseGlobalSettings == nil || *c.UseGlobalSettings {
+				mo := config.MergeSSHOptions(m.globalCfg.SSHOptions, c.SSHOptions)
+				opts = &mo
+			} else {
+				opts = c.SSHOptions
+			}
+			cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost, opts)
+			return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+				cleanup()
+				return sshExitMsg{err: err}
+			})
+		}
+		return m, nil
+
 	case sshExitMsg:
 		// SSH session ended, back to TUI
 		name := ""
-		items := m.sidebarItems()
-		if m.cursor < len(items) && items[m.cursor].conn != nil {
-			name = items[m.cursor].conn.Name
+		if m.connectTarget != nil {
+			name = m.connectTarget.Name
+		} else {
+			items := m.sidebarItems()
+			if m.cursor < len(items) && items[m.cursor].conn != nil {
+				name = items[m.cursor].conn.Name
+			}
 		}
+		duration := time.Since(m.connectStart)
+		durStr := formatDuration(duration)
 		if msg.err != nil {
-			t, cmd := showToast("disconnected from "+name, toastErr)
+			text := fmt.Sprintf("connection failed: %s", msg.err)
+			if name != "" {
+				text = fmt.Sprintf("disconnected from %s — %s, error", name, durStr)
+			}
+			t, cmd := showToast(text, toastErr)
 			m.activeToast = &t
+			m.connectTarget = nil
 			return m, cmd
 		}
 		if name != "" {
-			t, cmd := showToast("disconnected from "+name, toastOK)
+			t, cmd := showToast(fmt.Sprintf("disconnected from %s — %s", name, durStr), toastOK)
 			m.activeToast = &t
+			m.connectTarget = nil
 			return m, cmd
 		}
+		m.connectTarget = nil
 		return m, nil
 
 	case tea.KeyMsg:
@@ -111,6 +145,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.form == formGlobalSettings {
 			return m.handleGlobalSettingsInput(msg)
+		}
+		if m.form == formPasteConfirm {
+			return m.handlePasteConfirmInput(msg)
 		}
 
 		// Filtering mode
@@ -281,33 +318,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						targetGroup = items[m.cursor].conn.Group
 					}
 				}
-				pasteCount := 0
-				// Handle cut items — move them
+				// Collect items and check for collisions
+				var pasteItems []uuid.UUID
+				var collisions []string
+				isCut := len(m.cutConnections) > 0
 				for id := range m.cutConnections {
-					c, err := m.cfg.FindByID(id)
-					if err == nil {
-						c.Group = targetGroup
-						pasteCount++
-					}
+					pasteItems = append(pasteItems, id)
 				}
-				// Handle copy items — duplicate them
 				for id := range m.copyConnections {
+					pasteItems = append(pasteItems, id)
+				}
+				// Check name collisions in target group
+				for _, id := range pasteItems {
 					c, err := m.cfg.FindByID(id)
-					if err == nil {
-						newConn := *c
-						newConn.ID = uuid.New()
-						newConn.Group = targetGroup
-						m.cfg.Connections = append(m.cfg.Connections, newConn)
-						pasteCount++
+					if err != nil {
+						continue
+					}
+					for _, existing := range m.cfg.Connections {
+						if existing.ID != id && existing.Group == targetGroup && existing.Name == c.Name {
+							collisions = append(collisions, c.Name)
+							break
+						}
 					}
 				}
-				config.Save(m.configDir, m.cfg)
-				m.cutConnections = make(map[uuid.UUID]bool)
-				m.copyConnections = make(map[uuid.UUID]bool)
-				m.adjustSidebarViewport()
-				t, cmd := showToast(fmt.Sprintf("pasted %d items", pasteCount), toastOK)
-				m.activeToast = &t
-				return m, cmd
+				if len(collisions) == 0 {
+					// No collisions — paste immediately
+					m.pasteTargetGroup = targetGroup
+					m.pasteItems = pasteItems
+					m.pasteIsCut = isCut
+					m.executePaste(false)
+					m.adjustSidebarViewport()
+					t, cmd := showToast(fmt.Sprintf("pasted %d items", len(pasteItems)), toastOK)
+					m.activeToast = &t
+					return m, cmd
+				}
+				// Collisions exist — show confirmation
+				m.form = formPasteConfirm
+				m.pasteCollisions = collisions
+				m.pasteTargetGroup = targetGroup
+				m.pasteItems = pasteItems
+				m.pasteIsCut = isCut
 			}
 		case "G":
 			// Open global settings form
@@ -326,18 +376,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			c := m.selectedConnection()
 			if c != nil {
-				jumpHost := sshauth.ResolveJumpHost(m.cfg, c.JumpHost)
-				var opts *config.SSHOptions
-				if c.UseGlobalSettings == nil || *c.UseGlobalSettings {
-					mo := config.MergeSSHOptions(m.globalCfg.SSHOptions, c.SSHOptions)
-					opts = &mo
-				} else {
-					opts = c.SSHOptions
-				}
-				cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost, opts)
-				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-					cleanup()
-					return sshExitMsg{err: err}
+				m.connecting = true
+				m.connectTarget = c
+				m.connectStart = time.Now()
+				return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
+					return connectReadyMsg{}
 				})
 			}
 		}

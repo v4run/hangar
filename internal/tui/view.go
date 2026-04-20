@@ -79,8 +79,10 @@ func (m Model) renderStatusBar() string {
 		bar = " tab:next  shift+tab:prev  enter:save  esc:cancel"
 	case m.form == formTag:
 		bar = " enter:save  esc:cancel  (prefix with - to remove)"
+	case m.form == formPasteConfirm:
+		bar = " r:rename  s:skip  esc:cancel"
 	case m.form == formSync:
-		bar = " space:toggle  a:all  n:none  enter:import  esc:cancel"
+		bar = " space:toggle  a:all  n:none  /:filter  enter:import  esc:cancel"
 	case m.form == formAddScript || m.form == formEditScript:
 		bar = " tab:next  enter:save  esc:cancel"
 	case m.form == formEditNotes:
@@ -222,6 +224,10 @@ func (m Model) renderSidebar() string {
 }
 
 func (m Model) renderMainPane() string {
+	if m.connecting {
+		return m.renderConnecting()
+	}
+
 	if m.showHelp {
 		return m.renderHelp()
 	}
@@ -250,6 +256,8 @@ func (m Model) renderMainPane() string {
 		return m.renderEditGroup()
 	case formGlobalSettings:
 		return m.renderGlobalSettings()
+	case formPasteConfirm:
+		return m.renderPasteConfirm()
 	}
 
 	c := m.selectedConnection()
@@ -620,7 +628,27 @@ func (m Model) renderSyncList() string {
 	b.WriteString(titleStyle.Render("Import from SSH Config"))
 	b.WriteString("\n\n")
 
+	// Filter bar
+	if m.syncFiltering {
+		b.WriteString(dimStyle.Render("/") + " " + normalStyle.Render(m.syncFilterText) + cursorStyle.Render("_"))
+	} else if m.syncFilterText != "" {
+		b.WriteString(dimStyle.Render("/ " + m.syncFilterText))
+	}
+	filtered := m.filteredSyncEntries()
+	b.WriteString("  " + dimStyle.Render(fmt.Sprintf("%d / %d shown", len(filtered), len(m.syncEntries))))
+	b.WriteString("\n\n")
+
+	// Build a set of visible indices
+	filteredSet := make(map[int]bool)
+	for _, idx := range filtered {
+		filteredSet[idx] = true
+	}
+
 	for i, entry := range m.syncEntries {
+		if !filteredSet[i] {
+			continue
+		}
+
 		check := "[ ]"
 		if m.syncSelected[i] {
 			check = successStyle.Render("[x]")
@@ -644,6 +672,43 @@ func (m Model) renderSyncList() string {
 		b.WriteString("\n")
 	}
 
+	return b.String()
+}
+
+func (m Model) renderPasteConfirm() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Paste"))
+	b.WriteString(" into " + tagStyle.Render(m.pasteTargetGroup))
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render(fmt.Sprintf("  %d items, %d name collisions:", len(m.pasteItems), len(m.pasteCollisions))))
+	b.WriteString("\n\n")
+	for _, name := range m.pasteCollisions {
+		b.WriteString("  " + warnStyle.Render("\u26a0 "+name) + dimStyle.Render(" (conflicts)") + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString("  " + cursorStyle.Render("r") + "  rename duplicates (append -copy)\n")
+	b.WriteString("  " + cursorStyle.Render("s") + "  skip conflicting items\n")
+	b.WriteString("  " + cursorStyle.Render("esc") + "  cancel paste\n")
+	return b.String()
+}
+
+func (m Model) renderConnecting() string {
+	c := m.connectTarget
+	if c == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(titleStyle.Render("  \u259e\u259a  hangar") + "\n\n")
+	b.WriteString("    connecting to    " + normalStyle.Render(fmt.Sprintf("%s@%s:%d", c.User, c.Host, c.Port)) + "\n")
+	if c.IdentityFile != "" {
+		b.WriteString("    identity         " + dimStyle.Render(c.IdentityFile) + "\n")
+	}
+	if c.JumpHost != "" {
+		b.WriteString("    via              " + dimStyle.Render(m.jumpHostDisplay(c.JumpHost)) + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString("    " + dimStyle.Render("\u2819 establishing connection...") + "\n")
 	return b.String()
 }
 
