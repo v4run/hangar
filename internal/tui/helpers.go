@@ -9,6 +9,16 @@ import (
 	"github.com/v4run/hangar/internal/config"
 )
 
+// sectionDivider renders a labeled horizontal rule for form sections.
+func sectionDivider(label string, width int) string {
+	prefix := "── " + label + " "
+	remaining := width - len(prefix)
+	if remaining < 2 {
+		remaining = 2
+	}
+	return dimStyle.Render(prefix + strings.Repeat("─", remaining))
+}
+
 // sidebarVisibleRows returns how many sidebar items fit in the viewport.
 func (m Model) sidebarVisibleRows() int {
 	// Reserve lines: filter row, blank line after filter, bottom indicator line, status bar

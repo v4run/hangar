@@ -43,6 +43,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Help overlay intercepts keys
+		if m.showHelp {
+			switch msg.String() {
+			case "?", "esc":
+				m.showHelp = false
+			case "q":
+				m.showHelp = false
+				m.quitting = true
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
 		// Handle bracketed paste (bubbletea delivers pasted text as KeyMsg with Paste=true)
 		if tea.Key(msg).Paste {
 			pasted := string(tea.Key(msg).Runes)
@@ -112,6 +125,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Normal sidebar mode
 		switch msg.String() {
+		case "?":
+			m.showHelp = !m.showHelp
 		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit

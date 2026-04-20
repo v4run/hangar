@@ -130,6 +130,7 @@ type Model struct {
 	jumpSuggestions  []config.Connection // autocomplete suggestions for JumpHost
 	jumpSugCursor    int                 // cursor in jump suggestions
 	activeToast      *toast              // transient status message
+	showHelp         bool                // help overlay visible
 }
 
 type sshExitMsg struct{ err error }

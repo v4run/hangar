@@ -130,6 +130,8 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	scripts := m.allScripts()
 
 	switch msg.String() {
+	case "?":
+		m.showHelp = !m.showHelp
 	case "h", "esc":
 		m.focus = focusSidebar
 	case "q", "ctrl+c":

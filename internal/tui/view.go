@@ -86,9 +86,21 @@ func (m Model) renderStatusBar() string {
 	case m.form == formEditNotes:
 		bar = " enter:save  esc:cancel"
 	case m.focus == focusScripts:
-		bar = " n:new  e:edit  d:del  enter:run  o:notes  h:back  q:quit"
+		if m.width >= 120 {
+			bar = " n:new  e:edit  d:del  enter:run  o:notes  h:back  ?:help  q:quit"
+		} else if m.width >= 80 {
+			bar = " n:new  e:edit  d:del  enter:run  h:back  ?:help  q:quit"
+		} else {
+			bar = " ?:help  q:quit"
+		}
 	default:
-		bar = " n:new  e:edit  d:del  g:group  x:cut  y:copy  p:paste  G:settings  enter:connect  s:sync  t:tag  l:scripts  /:find  q:quit"
+		if m.width >= 120 {
+			bar = " n:new  e:edit  d:del  g:group  x:cut  y:copy  p:paste  G:settings  enter:connect  s:sync  t:tag  l:scripts  /:find  ?:help  q:quit"
+		} else if m.width >= 80 {
+			bar = " n:new  e:edit  d:del  enter:connect  /:find  ?:help  q:quit"
+		} else {
+			bar = " ?:help  q:quit"
+		}
 	}
 	return statusBarStyle.Render(bar)
 }
@@ -120,8 +132,13 @@ func (m Model) renderSidebar() string {
 	b.WriteString("\n")
 
 	// Determine visible slice
+	// Reduce by 1 to account for the tooltip line on the focused connection row
+	renderRows := visibleRows
+	if m.focus == focusSidebar && m.cursor >= m.sidebarOffset && m.cursor < len(items) && !items[m.cursor].isGroup {
+		renderRows--
+	}
 	start := m.sidebarOffset
-	end := start + visibleRows
+	end := start + renderRows
 	if end > len(items) {
 		end = len(items)
 	}
@@ -132,21 +149,35 @@ func (m Model) renderSidebar() string {
 
 		if item.isGroup {
 			arrow := "▾"
-			count := ""
+			// Count connections in this group
+			n := 0
+			for _, c := range conns {
+				if c.Group == item.group {
+					n++
+				}
+			}
+			countStr := ""
 			if m.collapsed[item.group] {
 				arrow = "▸"
-				n := 0
-				for _, c := range conns {
-					if c.Group == item.group {
-						n++
-					}
-				}
-				count = dimStyle.Render(fmt.Sprintf(" (%d)", n))
-			}
-			if isCursor {
-				b.WriteString(cursorStyle.Render("> ") + selectedStyle.Render(arrow+" "+item.group) + count)
+				countStr = fmt.Sprintf("(%d)", n)
 			} else {
-				b.WriteString("  " + headerStyle.Render(arrow+" "+item.group) + count)
+				if n == 0 {
+					countStr = "(empty)"
+				} else {
+					countStr = fmt.Sprintf("(%d)", n)
+				}
+			}
+			// Right-align the count badge
+			nameWidth := len(arrow) + 1 + len(item.group)
+			padWidth := 22 - nameWidth - len(countStr)
+			if padWidth < 1 {
+				padWidth = 1
+			}
+			pad := strings.Repeat(" ", padWidth)
+			if isCursor {
+				b.WriteString(cursorStyle.Render("> ") + selectedStyle.Render(arrow+" "+item.group) + pad + dimStyle.Render(countStr))
+			} else {
+				b.WriteString("  " + headerStyle.Render(arrow+" "+item.group) + pad + dimStyle.Render(countStr))
 			}
 		} else {
 			indent := "  "
@@ -159,10 +190,23 @@ func (m Model) renderSidebar() string {
 			} else if m.copyConnections[item.conn.ID] {
 				mark = dimStyle.Render(" +")
 			}
+			// Compute available width for name truncation
+			availWidth := 20
+			if item.conn.Group == "" {
+				availWidth = 22
+			}
+			displayName := item.conn.Name
+			if len(displayName) > availWidth {
+				displayName = displayName[:availWidth-1] + "…"
+			}
 			if isCursor {
-				b.WriteString(cursorStyle.Render("> ") + indent[2:] + selectedStyle.Render(item.conn.Name) + mark)
+				b.WriteString(cursorStyle.Render("> ") + indent[2:] + selectedStyle.Render(displayName) + mark)
+				// Show user@host:port tooltip on focused row
+				b.WriteString("\n")
+				tooltip := fmt.Sprintf("%s@%s:%d", item.conn.User, item.conn.Host, item.conn.Port)
+				b.WriteString(indent + dimStyle.Render(tooltip))
 			} else {
-				b.WriteString(indent + normalStyle.Render(item.conn.Name) + mark)
+				b.WriteString(indent + normalStyle.Render(displayName) + mark)
 			}
 		}
 		b.WriteString("\n")
@@ -178,6 +222,10 @@ func (m Model) renderSidebar() string {
 }
 
 func (m Model) renderMainPane() string {
+	if m.showHelp {
+		return m.renderHelp()
+	}
+
 	// Form modes
 	switch m.form {
 	case formAdd, formEdit:
@@ -212,7 +260,10 @@ func (m Model) renderMainPane() string {
 			return dimStyle.Render("group: " + items[m.cursor].group + "\n\npress space to expand/collapse")
 		}
 		if len(m.filteredConnections()) == 0 {
-			return dimStyle.Render("no connections\n\npress n to add or s to sync from SSH config")
+			if m.filterText != "" {
+				return m.renderFilterEmpty()
+			}
+			return m.renderEmptyState()
 		}
 		return ""
 	}
@@ -334,8 +385,7 @@ func (m Model) renderForm() string {
 
 	// Advanced settings section
 	b.WriteString("\n")
-	b.WriteString(headerStyle.Render("Advanced SSH Options"))
-	b.WriteString("\n")
+	b.WriteString(sectionDivider("advanced", m.width-29) + "\n\n")
 
 	advLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(10)
 	for i := fieldForwardAgent; i < fieldAdvancedCount; i++ {
@@ -436,6 +486,7 @@ func (m Model) renderGlobalSettings() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Global SSH Settings"))
 	b.WriteString("\n\n")
+	b.WriteString(sectionDivider("options", m.width-29) + "\n\n")
 
 	advLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(10)
 	for i := fieldForwardAgent; i < fieldAdvancedCount; i++ {
@@ -593,6 +644,31 @@ func (m Model) renderSyncList() string {
 		b.WriteString("\n")
 	}
 
+	return b.String()
+}
+
+func (m Model) renderEmptyState() string {
+	var b strings.Builder
+	b.WriteString("\n\n")
+	b.WriteString(titleStyle.Render("  ▞▚  hangar") + "  " + dimStyle.Render("ssh bookmarks, organised"))
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("  no connections yet"))
+	b.WriteString("\n\n")
+	b.WriteString("  " + cursorStyle.Render("n") + "  add your first connection\n")
+	b.WriteString("  " + cursorStyle.Render("s") + "  import from ~/.ssh/config\n")
+	b.WriteString("  " + cursorStyle.Render("g") + "  create a group first\n")
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("  tip: tag hosts with t, attach scripts with l"))
+	return b.String()
+}
+
+func (m Model) renderFilterEmpty() string {
+	var b strings.Builder
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("  no matches for ") + tagStyle.Render(m.filterText))
+	b.WriteString("\n\n")
+	b.WriteString("  " + cursorStyle.Render("esc") + "  clear filter\n")
+	b.WriteString("  " + cursorStyle.Render("n") + "  add a new connection\n")
 	return b.String()
 }
 
