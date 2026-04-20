@@ -100,7 +100,7 @@ func NewSSHCommand(conn *config.Connection, jumpHost *config.Connection, opts *c
 
 	// Set environment variables from SSHOptions
 	if opts != nil && len(opts.EnvVars) > 0 {
-		cmd.Env = append(os.Environ())
+		cmd.Env = os.Environ()
 		for key, val := range opts.EnvVars {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", key, val))
 		}

@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
 	sshauth "github.com/v4run/hangar/internal/ssh"
 )
@@ -34,6 +35,8 @@ const (
 	formEditScript
 	formDeleteScript
 	formEditNotes
+	formEditGroup
+	formGlobalSettings
 )
 
 const (
@@ -50,6 +53,27 @@ const (
 )
 
 var fieldLabels = []string{"Name", "Host", "Port", "User", "Key", "Jump", "Group", "Tags", "Pass"}
+
+const (
+	fieldForwardAgent = fieldCount + iota
+	fieldCompression
+	fieldLocalForward
+	fieldRemoteForward
+	fieldServerAliveInterval
+	fieldServerAliveCountMax
+	fieldStrictHostKeyCheck
+	fieldRequestTTY
+	fieldEnvVars
+	fieldExtraOptions
+	fieldUseGlobalSettings
+	fieldAdvancedCount
+)
+
+var advancedFieldLabels = []string{
+	"FwdAgent", "Compress", "LocalFwd", "RemoteFwd",
+	"Alive", "AliveMax", "HostKey", "TTY",
+	"Envs", "Extra", "UseGlobal",
+}
 
 // sidebarItem represents a row in the sidebar — either a group header or a connection.
 type sidebarItem struct {
@@ -69,15 +93,17 @@ type Model struct {
 	sshConfigChanged bool
 	filterText       string
 	filtering        bool
-	collapsed        map[string]bool // collapsed group state
-	cutConnections   map[string]bool // names of connections being moved (cut/paste)
-	groupNameInput   string          // input for new group name
+	collapsed        map[string]bool     // collapsed group state
+	cutConnections   map[uuid.UUID]bool  // IDs of connections being moved (cut)
+	copyConnections  map[uuid.UUID]bool  // IDs of connections being copied
+	groupNameInput   string              // input for new group name
 	quitting         bool
 	form             formMode
-	formFields       []string            // field values: [name, host, port, user, key, jump, tags]
-	formCursor       int                 // which field is focused (0-6)
+	formFields       []string            // field values
+	formCursor       int                 // which field is focused
 	formError        string              // validation error message
-	formTarget       string              // connection name being edited/deleted/tagged
+	formTarget       uuid.UUID           // connection ID being edited/deleted/tagged
+	formTargetGroup  string              // group name being edited/deleted
 	tagInput         string              // input for tag mode
 	syncEntries      []config.Connection // parsed SSH config entries for sync selection
 	syncSelected     []bool              // selection state per entry
@@ -88,6 +114,8 @@ type Model struct {
 	scriptField      int                 // 0=name, 1=command
 	scriptTarget     int                 // index of script being edited
 	notesInput       string              // notes text being edited
+	jumpSuggestions  []config.Connection // autocomplete suggestions for JumpHost
+	jumpSugCursor    int                 // cursor in jump suggestions
 }
 
 type sshExitMsg struct{ err error }
@@ -100,7 +128,8 @@ func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDi
 		focus:            focusSidebar,
 		sshConfigChanged: sshChanged,
 		collapsed:        make(map[string]bool),
-		cutConnections:   make(map[string]bool),
+		cutConnections:   make(map[uuid.UUID]bool),
+		copyConnections:  make(map[uuid.UUID]bool),
 	}
 }
 
@@ -119,6 +148,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Handle bracketed paste (bubbletea delivers pasted text as KeyMsg with Paste=true)
+		if tea.Key(msg).Paste {
+			pasted := string(tea.Key(msg).Runes)
+			if m.form == formAdd || m.form == formEdit || m.form == formGlobalSettings {
+				if m.formCursor < len(m.formFields) {
+					m.formFields[m.formCursor] += pasted
+				}
+			} else if m.form == formTag {
+				m.tagInput += pasted
+			} else if m.form == formAddGroup || m.form == formEditGroup {
+				m.groupNameInput += pasted
+			} else if m.form == formEditNotes {
+				m.notesInput += pasted
+			} else if m.form == formAddScript || m.form == formEditScript {
+				if m.scriptField == 0 {
+					m.scriptName += pasted
+				} else {
+					m.scriptCommand += pasted
+				}
+			}
+			return m, nil
+		}
 		// Form input handling
 		if m.form == formAdd || m.form == formEdit {
 			return m.handleFormInput(msg)
@@ -146,6 +197,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.form == formEditNotes {
 			return m.handleNotesInput(msg)
+		}
+		if m.form == formEditGroup {
+			return m.handleEditGroupInput(msg)
+		}
+		if m.form == formGlobalSettings {
+			return m.handleGlobalSettingsInput(msg)
 		}
 
 		// Filtering mode
@@ -220,33 +277,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					currentGroup = items[m.cursor].conn.Group
 				}
 			}
-			m.formFields = []string{"", "", "22", "", "", "", currentGroup, "", ""}
+			m.formFields = make([]string, fieldAdvancedCount)
+			m.formFields[fieldPort] = "22"
+			m.formFields[fieldGroup] = currentGroup
+			m.formFields[fieldUseGlobalSettings] = "yes"
 			m.formCursor = 0
 			m.formError = ""
 		case "e":
-			c := m.selectedConnection()
-			if c != nil {
-				m.form = formEdit
-				m.formTarget = c.Name
-				existingPass, _ := config.GetPassword(c.Name)
-				m.formFields = []string{
-					c.Name, c.Host, fmt.Sprintf("%d", c.Port), c.User,
-					c.IdentityFile, c.JumpHost, c.Group, strings.Join(c.Tags, ", "), existingPass,
-				}
-				m.formCursor = 1
+			items := m.sidebarItems()
+			if m.cursor < len(items) && items[m.cursor].isGroup {
+				// Edit group name
+				m.form = formEditGroup
+				m.formTargetGroup = items[m.cursor].group
+				m.groupNameInput = items[m.cursor].group
 				m.formError = ""
+			} else {
+				c := m.selectedConnection()
+				if c != nil {
+					m.form = formEdit
+					m.formTarget = c.ID
+					existingPass, _ := config.GetPassword(c.ID.String())
+					if existingPass == "" {
+						existingPass, _ = config.GetPassword(c.Name)
+					}
+					jumpDisplay := m.jumpHostDisplay(c.JumpHost)
+					m.formFields = make([]string, fieldAdvancedCount)
+					m.formFields[fieldName] = c.Name
+					m.formFields[fieldHost] = c.Host
+					m.formFields[fieldPort] = fmt.Sprintf("%d", c.Port)
+					m.formFields[fieldUser] = c.User
+					m.formFields[fieldKey] = c.IdentityFile
+					m.formFields[fieldJump] = jumpDisplay
+					m.formFields[fieldGroup] = c.Group
+					m.formFields[fieldTags] = strings.Join(c.Tags, ", ")
+					m.formFields[fieldPassword] = existingPass
+					m.populateSSHOptionsFields(c.SSHOptions, c.UseGlobalSettings)
+					m.formCursor = 0
+					m.formError = ""
+				}
 			}
 		case "d":
 			items := m.sidebarItems()
 			if m.cursor < len(items) && items[m.cursor].isGroup {
 				// Delete group
 				m.form = formDeleteGroup
-				m.formTarget = items[m.cursor].group
+				m.formTargetGroup = items[m.cursor].group
 			} else {
 				c := m.selectedConnection()
 				if c != nil {
 					m.form = formDelete
-					m.formTarget = c.Name
+					m.formTarget = c.ID
 				}
 			}
 		case "g":
@@ -258,15 +338,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Toggle cut on connection
 			c := m.selectedConnection()
 			if c != nil {
-				if m.cutConnections[c.Name] {
-					delete(m.cutConnections, c.Name)
+				if m.cutConnections[c.ID] {
+					delete(m.cutConnections, c.ID)
 				} else {
-					m.cutConnections[c.Name] = true
+					m.cutConnections[c.ID] = true
+					delete(m.copyConnections, c.ID)
 				}
 			}
 		case "y":
-			// Paste all cut connections into group at cursor
-			if len(m.cutConnections) > 0 {
+			// Toggle copy on connection
+			c := m.selectedConnection()
+			if c != nil {
+				if m.copyConnections[c.ID] {
+					delete(m.copyConnections, c.ID)
+				} else {
+					m.copyConnections[c.ID] = true
+					delete(m.cutConnections, c.ID)
+				}
+			}
+		case "p":
+			// Paste all cut/copied connections into group at cursor
+			if len(m.cutConnections) > 0 || len(m.copyConnections) > 0 {
 				items := m.sidebarItems()
 				targetGroup := ""
 				if m.cursor < len(items) {
@@ -276,32 +368,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						targetGroup = items[m.cursor].conn.Group
 					}
 				}
-				for name := range m.cutConnections {
-					c, err := m.cfg.FindByName(name)
+				// Handle cut items — move them
+				for id := range m.cutConnections {
+					c, err := m.cfg.FindByID(id)
 					if err == nil {
 						c.Group = targetGroup
 					}
 				}
+				// Handle copy items — duplicate them
+				for id := range m.copyConnections {
+					c, err := m.cfg.FindByID(id)
+					if err == nil {
+						newConn := *c
+						newConn.ID = uuid.New()
+						newConn.Group = targetGroup
+						m.cfg.Connections = append(m.cfg.Connections, newConn)
+					}
+				}
 				config.Save(m.configDir, m.cfg)
-				m.cutConnections = make(map[string]bool)
+				m.cutConnections = make(map[uuid.UUID]bool)
+				m.copyConnections = make(map[uuid.UUID]bool)
 			}
+		case "G":
+			// Open global settings form
+			m.form = formGlobalSettings
+			m.formFields = make([]string, fieldAdvancedCount)
+			m.populateSSHOptionsFields(m.globalCfg.SSHOptions, nil)
+			m.formCursor = fieldForwardAgent
+			m.formError = ""
 		case "t":
 			c := m.selectedConnection()
 			if c != nil {
 				m.form = formTag
-				m.formTarget = c.Name
+				m.formTarget = c.ID
 				m.tagInput = ""
 			}
 		case "enter":
 			c := m.selectedConnection()
 			if c != nil {
-				var jumpHost *config.Connection
-				if c.JumpHost != "" {
-					if jh, err := m.cfg.FindByName(c.JumpHost); err == nil {
-						jumpHost = jh
-					}
+				jumpHost := sshauth.ResolveJumpHost(m.cfg, c.JumpHost)
+				var opts *config.SSHOptions
+				if c.UseGlobalSettings == nil || *c.UseGlobalSettings {
+					mo := config.MergeSSHOptions(m.globalCfg.SSHOptions, c.SSHOptions)
+					opts = &mo
+				} else {
+					opts = c.SSHOptions
 				}
-				cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost, nil)
+				cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost, opts)
 				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 					cleanup()
 					return sshExitMsg{err: err}
@@ -425,8 +538,7 @@ func (m Model) selectedConnection() *config.Connection {
 	if item.isGroup {
 		return nil
 	}
-	// Return the actual pointer from cfg
-	c, err := m.cfg.FindByName(item.conn.Name)
+	c, err := m.cfg.FindByID(item.conn.ID)
 	if err != nil {
 		return nil
 	}
@@ -471,8 +583,10 @@ func (m Model) renderStatusBar() string {
 		bar = " tab:next  shift+tab:prev  enter:save  esc:cancel"
 	case m.form == formDelete || m.form == formDeleteScript || m.form == formDeleteGroup:
 		bar = " y:confirm  esc:cancel"
-	case m.form == formAddGroup:
+	case m.form == formAddGroup || m.form == formEditGroup:
 		bar = " enter:save  esc:cancel"
+	case m.form == formGlobalSettings:
+		bar = " tab:next  shift+tab:prev  enter:save  esc:cancel"
 	case m.form == formTag:
 		bar = " enter:save  esc:cancel  (prefix with - to remove)"
 	case m.form == formSync:
@@ -484,7 +598,7 @@ func (m Model) renderStatusBar() string {
 	case m.focus == focusScripts:
 		bar = " n:new  e:edit  d:del  enter:run  o:notes  h:back  q:quit"
 	default:
-		bar = " n:new  e:edit  d:del  g:group  x:cut  y:paste  enter:connect  s:sync  t:tag  l:scripts  /:find  q:quit"
+		bar = " n:new  e:edit  d:del  g:group  x:cut  y:copy  p:paste  G:settings  enter:connect  s:sync  t:tag  l:scripts  /:find  q:quit"
 	}
 	return statusBarStyle.Render(bar)
 }
@@ -532,14 +646,16 @@ func (m Model) renderSidebar() string {
 			if item.conn.Group != "" {
 				indent = "    "
 			}
-			cutMark := ""
-			if m.cutConnections[item.conn.Name] {
-				cutMark = dimStyle.Render(" ~")
+			mark := ""
+			if m.cutConnections[item.conn.ID] {
+				mark = dimStyle.Render(" ~")
+			} else if m.copyConnections[item.conn.ID] {
+				mark = dimStyle.Render(" +")
 			}
 			if isCursor {
-				b.WriteString(cursorStyle.Render("> ") + indent[2:] + selectedStyle.Render(item.conn.Name) + cutMark)
+				b.WriteString(cursorStyle.Render("> ") + indent[2:] + selectedStyle.Render(item.conn.Name) + mark)
 			} else {
-				b.WriteString(indent + normalStyle.Render(item.conn.Name) + cutMark)
+				b.WriteString(indent + normalStyle.Render(item.conn.Name) + mark)
 			}
 		}
 		b.WriteString("\n")
@@ -569,6 +685,10 @@ func (m Model) renderMainPane() string {
 		return m.renderDeleteScriptConfirm()
 	case formEditNotes:
 		return m.renderNotesForm()
+	case formEditGroup:
+		return m.renderEditGroup()
+	case formGlobalSettings:
+		return m.renderGlobalSettings()
 	}
 
 	c := m.selectedConnection()
@@ -596,10 +716,13 @@ func (m Model) renderMainPane() string {
 		b.WriteString("\n")
 	}
 	if c.JumpHost != "" {
-		b.WriteString(dimStyle.Render("via " + c.JumpHost))
+		b.WriteString(dimStyle.Render("via " + m.jumpHostDisplay(c.JumpHost)))
 		b.WriteString("\n")
 	}
-	if pass, err := config.GetPassword(c.Name); err == nil && pass != "" {
+	if pass, err := config.GetPassword(c.ID.String()); (err == nil && pass != "") {
+		b.WriteString(dimStyle.Render("pass ********"))
+		b.WriteString("\n")
+	} else if pass, err := config.GetPassword(c.Name); err == nil && pass != "" {
 		b.WriteString(dimStyle.Render("pass ********"))
 		b.WriteString("\n")
 	}
@@ -784,13 +907,15 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		conn := m.selectedConnection()
 		if m.scriptCursor < len(scripts) && conn != nil {
 			script := scripts[m.scriptCursor]
-			var jumpHost *config.Connection
-			if conn.JumpHost != "" {
-				if jh, err := m.cfg.FindByName(conn.JumpHost); err == nil {
-					jumpHost = jh
-				}
+			jumpHost := sshauth.ResolveJumpHost(m.cfg, conn.JumpHost)
+			var opts *config.SSHOptions
+			if conn.UseGlobalSettings == nil || *conn.UseGlobalSettings {
+				mo := config.MergeSSHOptions(m.globalCfg.SSHOptions, conn.SSHOptions)
+				opts = &mo
+			} else {
+				opts = conn.SSHOptions
 			}
-			sshCmd, cleanup := sshauth.NewSSHCommand(conn, jumpHost, nil)
+			sshCmd, cleanup := sshauth.NewSSHCommand(conn, jumpHost, opts)
 			escapedCmd := strings.ReplaceAll(script.Command, "'", "'\\''")
 			remoteCmd := fmt.Sprintf("bash -l -c '%s; printf \"\\npress any key to continue...\"; read -n 1'", escapedCmd)
 			userHost := sshCmd.Args[len(sshCmd.Args)-1]
@@ -962,18 +1087,94 @@ func (m Model) handleAddGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleEditGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form = formNone
+	case "enter":
+		newName := strings.TrimSpace(m.groupNameInput)
+		if newName == "" {
+			m.formError = "group name is required"
+			return m, nil
+		}
+		oldName := m.formTargetGroup
+		if newName == oldName {
+			m.form = formNone
+			return m, nil
+		}
+		// Rename group across all connections
+		for i := range m.cfg.Connections {
+			if m.cfg.Connections[i].Group == oldName {
+				m.cfg.Connections[i].Group = newName
+			}
+		}
+		// Update Groups map
+		if m.cfg.Groups != nil {
+			delete(m.cfg.Groups, oldName)
+			m.cfg.Groups[newName] = true
+		}
+		// Update collapsed state
+		if wasCollapsed, ok := m.collapsed[oldName]; ok {
+			delete(m.collapsed, oldName)
+			m.collapsed[newName] = wasCollapsed
+		}
+		config.Save(m.configDir, m.cfg)
+		m.form = formNone
+	case "backspace":
+		if len(m.groupNameInput) > 0 {
+			m.groupNameInput = m.groupNameInput[:len(m.groupNameInput)-1]
+		}
+	default:
+		if len(msg.String()) == 1 {
+			m.groupNameInput += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleGlobalSettingsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form = formNone
+	case "tab", "down":
+		m.formCursor++
+		if m.formCursor >= fieldAdvancedCount {
+			m.formCursor = fieldForwardAgent
+		}
+	case "shift+tab", "up":
+		m.formCursor--
+		if m.formCursor < fieldForwardAgent {
+			m.formCursor = fieldAdvancedCount - 1
+		}
+	case "enter":
+		opts, _ := parseSSHOptionsFromFields(m.formFields)
+		m.globalCfg.SSHOptions = opts
+		config.SaveGlobal(m.configDir, m.globalCfg)
+		m.form = formNone
+	case "backspace":
+		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
+			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
+		}
+	default:
+		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
+			m.formFields[m.formCursor] += msg.String()
+		}
+	}
+	return m, nil
+}
+
 func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
 		// Ungroup all connections in this group
 		for i := range m.cfg.Connections {
-			if m.cfg.Connections[i].Group == m.formTarget {
+			if m.cfg.Connections[i].Group == m.formTargetGroup {
 				m.cfg.Connections[i].Group = ""
 			}
 		}
-		delete(m.collapsed, m.formTarget)
+		delete(m.collapsed, m.formTargetGroup)
 		if m.cfg.Groups != nil {
-			delete(m.cfg.Groups, m.formTarget)
+			delete(m.cfg.Groups, m.formTargetGroup)
 		}
 		config.Save(m.configDir, m.cfg)
 		items := m.sidebarItems()
@@ -991,25 +1192,30 @@ func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.form = formNone
+		m.jumpSuggestions = nil
 	case "tab", "down":
-		m.formCursor = (m.formCursor + 1) % fieldCount
-		if m.form == formEdit && m.formCursor == fieldName {
-			m.formCursor = fieldHost
-		}
+		m.formCursor = (m.formCursor + 1) % fieldAdvancedCount
+		m.jumpSuggestions = nil
 	case "shift+tab", "up":
-		m.formCursor = (m.formCursor - 1 + fieldCount) % fieldCount
-		if m.form == formEdit && m.formCursor == fieldName {
-			m.formCursor = fieldTags
-		}
+		m.formCursor = (m.formCursor - 1 + fieldAdvancedCount) % fieldAdvancedCount
+		m.jumpSuggestions = nil
 	case "enter":
 		return m.saveForm()
 	case "backspace":
-		if len(m.formFields[m.formCursor]) > 0 {
+		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
 			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
+			if m.formCursor == fieldJump {
+				m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
+				m.jumpSugCursor = 0
+			}
 		}
 	default:
-		if len(msg.String()) == 1 {
+		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
 			m.formFields[m.formCursor] += msg.String()
+			if m.formCursor == fieldJump {
+				m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
+				m.jumpSugCursor = 0
+			}
 		}
 	}
 	return m, nil
@@ -1056,15 +1262,23 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Resolve JumpHost display name to UUID for storage
+	jumpResolved := m.jumpHostResolve(jump)
+
+	// Parse SSH options from advanced fields
+	sshOpts, useGlobal := parseSSHOptionsFromFields(m.formFields)
+
 	conn := config.Connection{
-		Name:         name,
-		Host:         host,
-		Port:         port,
-		User:         user,
-		IdentityFile: key,
-		JumpHost:     jump,
-		Group:        group,
-		Tags:         tags,
+		Name:              name,
+		Host:              host,
+		Port:              port,
+		User:              user,
+		IdentityFile:      key,
+		JumpHost:          jumpResolved,
+		Group:             group,
+		Tags:              tags,
+		SSHOptions:        sshOpts,
+		UseGlobalSettings: useGlobal,
 	}
 
 	if m.form == formAdd {
@@ -1073,8 +1287,15 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	} else if m.form == formEdit {
-		m.cfg.Remove(m.formTarget)
-		conn.Name = m.formTarget // keep original name
+		// Preserve existing fields from original connection
+		existing, findErr := m.cfg.FindByID(m.formTarget)
+		if findErr == nil {
+			conn.ID = existing.ID
+			conn.Scripts = existing.Scripts
+			conn.Notes = existing.Notes
+			conn.SyncedFromSSHConfig = existing.SyncedFromSSHConfig
+		}
+		m.cfg.RemoveByID(m.formTarget)
 		m.cfg.Connections = append(m.cfg.Connections, conn)
 	}
 
@@ -1085,27 +1306,26 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 	}
 
 	// Save or delete password in keychain
-	connName := name
-	if m.form == formEdit {
-		connName = m.formTarget
-	}
+	connKey := conn.ID.String()
 	if password != "" {
-		config.SetPassword(connName, password)
+		config.SetPassword(connKey, password)
 	} else {
-		config.DeletePassword(connName)
+		config.DeletePassword(connKey)
 	}
 
 	m.form = formNone
 	m.formError = ""
+	m.jumpSuggestions = nil
 	return m, nil
 }
 
 func (m Model) handleDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		m.cfg.Remove(m.formTarget)
+		m.cfg.RemoveByID(m.formTarget)
 		config.Save(m.configDir, m.cfg)
-		if m.cursor >= len(m.cfg.Connections) && m.cursor > 0 {
+		items := m.sidebarItems()
+		if m.cursor >= len(items) && m.cursor > 0 {
 			m.cursor--
 		}
 		m.form = formNone
@@ -1121,6 +1341,13 @@ func (m Model) handleTagInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form = formNone
 	case "enter":
 		if m.tagInput != "" {
+			// Look up the connection name from the UUID
+			c, err := m.cfg.FindByID(m.formTarget)
+			if err != nil {
+				m.form = formNone
+				return m, nil
+			}
+			connName := c.Name
 			var toAdd, toRemove []string
 			for _, t := range strings.Split(m.tagInput, ",") {
 				t = strings.TrimSpace(t)
@@ -1134,10 +1361,10 @@ func (m Model) handleTagInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if len(toAdd) > 0 {
-				m.cfg.AddTags(m.formTarget, toAdd)
+				m.cfg.AddTags(connName, toAdd)
 			}
 			if len(toRemove) > 0 {
-				m.cfg.RemoveTags(m.formTarget, toRemove)
+				m.cfg.RemoveTags(connName, toRemove)
 			}
 			config.Save(m.configDir, m.cfg)
 		}
@@ -1199,6 +1426,7 @@ func (m Model) handleSyncInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				imported++
 			}
 		}
+		_ = imported
 		config.Save(m.configDir, m.cfg)
 		m.sshConfigChanged = false
 		m.form = formNone
@@ -1256,8 +1484,39 @@ func (m Model) renderForm() string {
 		label := labelStyle.Render(strings.ToLower(fieldLabels[i]))
 		if i == m.formCursor {
 			b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(fieldLabels[i])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
-		} else if m.form == formEdit && i == fieldName {
-			b.WriteString("  " + label + " " + dimStyle.Render(value+" (readonly)"))
+		} else {
+			b.WriteString("  " + label + " " + normalStyle.Render(value))
+		}
+		b.WriteString("\n")
+	}
+
+	// JumpHost suggestions
+	if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 {
+		b.WriteString(dimStyle.Render("  suggestions: "))
+		for i, s := range m.jumpSuggestions {
+			if i > 5 {
+				b.WriteString(dimStyle.Render("..."))
+				break
+			}
+			if i > 0 {
+				b.WriteString(dimStyle.Render(", "))
+			}
+			b.WriteString(normalStyle.Render(s.Name))
+		}
+		b.WriteString("\n")
+	}
+
+	// Advanced settings section
+	b.WriteString("\n")
+	b.WriteString(headerStyle.Render("Advanced SSH Options"))
+	b.WriteString("\n")
+
+	for i := fieldForwardAgent; i < fieldAdvancedCount; i++ {
+		value := m.formFields[i]
+		idx := i - fieldForwardAgent
+		label := labelStyle.Render(strings.ToLower(advancedFieldLabels[idx]))
+		if i == m.formCursor {
+			b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
 		} else {
 			b.WriteString("  " + label + " " + normalStyle.Render(value))
 		}
@@ -1272,10 +1531,15 @@ func (m Model) renderForm() string {
 }
 
 func (m Model) renderDeleteConfirm() string {
+	// Look up name from UUID
+	name := m.formTarget.String()
+	if c, err := m.cfg.FindByID(m.formTarget); err == nil {
+		name = c.Name
+	}
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Delete Connection"))
 	b.WriteString("\n\n")
-	b.WriteString(normalStyle.Render("Remove ") + selectedStyle.Render(m.formTarget) + normalStyle.Render("?"))
+	b.WriteString(normalStyle.Render("Remove ") + selectedStyle.Render(name) + normalStyle.Render("?"))
 	b.WriteString("\n\n")
 	b.WriteString(dimStyle.Render("this cannot be undone"))
 	return b.String()
@@ -1294,23 +1558,68 @@ func (m Model) renderAddGroup() string {
 	return b.String()
 }
 
+func (m Model) renderEditGroup() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Edit Group"))
+	b.WriteString("\n\n")
+	b.WriteString(activeFieldStyle.Render("> name") + " " + normalStyle.Render(m.groupNameInput) + cursorStyle.Render("_"))
+
+	if m.formError != "" {
+		b.WriteString("\n\n" + errorStyle.Render("  "+m.formError))
+	}
+
+	return b.String()
+}
+
+func (m Model) renderGlobalSettings() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Global SSH Settings"))
+	b.WriteString("\n\n")
+
+	for i := fieldForwardAgent; i < fieldAdvancedCount; i++ {
+		if i == fieldUseGlobalSettings {
+			continue // skip UseGlobal in global settings
+		}
+		value := m.formFields[i]
+		idx := i - fieldForwardAgent
+		label := labelStyle.Render(strings.ToLower(advancedFieldLabels[idx]))
+		if i == m.formCursor {
+			b.WriteString(activeFieldStyle.Render("> "+strings.ToLower(advancedFieldLabels[idx])) + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+		} else {
+			b.WriteString("  " + label + " " + normalStyle.Render(value))
+		}
+		b.WriteString("\n")
+	}
+
+	if m.formError != "" {
+		b.WriteString("\n" + errorStyle.Render("  "+m.formError))
+	}
+
+	return b.String()
+}
+
 func (m Model) renderDeleteGroupConfirm() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Delete Group"))
 	b.WriteString("\n\n")
-	b.WriteString(normalStyle.Render("Remove group ") + selectedStyle.Render(m.formTarget) + normalStyle.Render("?"))
+	b.WriteString(normalStyle.Render("Remove group ") + selectedStyle.Render(m.formTargetGroup) + normalStyle.Render("?"))
 	b.WriteString("\n\n")
 	b.WriteString(dimStyle.Render("connections will be ungrouped, not deleted"))
 	return b.String()
 }
 
 func (m Model) renderTagInput() string {
+	// Look up name from UUID for display
+	connName := m.formTarget.String()
+	if c, err := m.cfg.FindByID(m.formTarget); err == nil {
+		connName = c.Name
+	}
+
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Tags: " + m.formTarget))
+	b.WriteString(titleStyle.Render("Tags: " + connName))
 	b.WriteString("\n\n")
 
-	c, err := m.cfg.FindByName(m.formTarget)
-	if err == nil && len(c.Tags) > 0 {
+	if c, err := m.cfg.FindByID(m.formTarget); err == nil && len(c.Tags) > 0 {
 		for i, t := range c.Tags {
 			if i > 0 {
 				b.WriteString(dimStyle.Render(", "))
@@ -1326,6 +1635,203 @@ func (m Model) renderTagInput() string {
 	b.WriteString(dimStyle.Render("comma-separated, prefix with - to remove"))
 
 	return b.String()
+}
+
+// jumpHostDisplay converts a JumpHost value (which may be a UUID string) to a display name.
+func (m Model) jumpHostDisplay(jumpHost string) string {
+	if jumpHost == "" {
+		return ""
+	}
+	if id, err := uuid.Parse(jumpHost); err == nil {
+		if c, err := m.cfg.FindByID(id); err == nil {
+			return c.Name
+		}
+	}
+	return jumpHost
+}
+
+// jumpHostResolve converts a display name to UUID string for storage.
+func (m Model) jumpHostResolve(input string) string {
+	if input == "" {
+		return ""
+	}
+	// If it's already a UUID, keep it
+	if _, err := uuid.Parse(input); err == nil {
+		return input
+	}
+	// Try to find by name
+	if c, err := m.cfg.FindByName(input); err == nil {
+		return c.ID.String()
+	}
+	// Return as-is (could be a raw host string)
+	return input
+}
+
+// jumpHostSuggestions returns connections whose names match the partial input.
+func (m Model) jumpHostSuggestions(partial string) []config.Connection {
+	if partial == "" {
+		return nil
+	}
+	lower := strings.ToLower(partial)
+	var results []config.Connection
+	for _, c := range m.cfg.Connections {
+		if strings.Contains(strings.ToLower(c.Name), lower) {
+			results = append(results, c)
+		}
+	}
+	return results
+}
+
+// populateSSHOptionsFields fills formFields with SSHOptions values.
+func (m *Model) populateSSHOptionsFields(opts *config.SSHOptions, useGlobal *bool) {
+	if opts != nil {
+		if opts.ForwardAgent != nil {
+			m.formFields[fieldForwardAgent] = boolToYesNo(*opts.ForwardAgent)
+		}
+		if opts.Compression != nil {
+			m.formFields[fieldCompression] = boolToYesNo(*opts.Compression)
+		}
+		if len(opts.LocalForward) > 0 {
+			m.formFields[fieldLocalForward] = strings.Join(opts.LocalForward, ", ")
+		}
+		if len(opts.RemoteForward) > 0 {
+			m.formFields[fieldRemoteForward] = strings.Join(opts.RemoteForward, ", ")
+		}
+		if opts.ServerAliveInterval != nil {
+			m.formFields[fieldServerAliveInterval] = strconv.Itoa(*opts.ServerAliveInterval)
+		}
+		if opts.ServerAliveCountMax != nil {
+			m.formFields[fieldServerAliveCountMax] = strconv.Itoa(*opts.ServerAliveCountMax)
+		}
+		if opts.StrictHostKeyCheck != "" {
+			m.formFields[fieldStrictHostKeyCheck] = opts.StrictHostKeyCheck
+		}
+		if opts.RequestTTY != "" {
+			m.formFields[fieldRequestTTY] = opts.RequestTTY
+		}
+		if len(opts.EnvVars) > 0 {
+			var pairs []string
+			for k, v := range opts.EnvVars {
+				pairs = append(pairs, k+"="+v)
+			}
+			m.formFields[fieldEnvVars] = strings.Join(pairs, ", ")
+		}
+		if len(opts.ExtraOptions) > 0 {
+			var pairs []string
+			for k, v := range opts.ExtraOptions {
+				pairs = append(pairs, k+"="+v)
+			}
+			m.formFields[fieldExtraOptions] = strings.Join(pairs, ", ")
+		}
+	}
+	if useGlobal != nil {
+		m.formFields[fieldUseGlobalSettings] = boolToYesNo(*useGlobal)
+	}
+}
+
+// parseSSHOptionsFromFields parses advanced form fields into SSHOptions.
+func parseSSHOptionsFromFields(fields []string) (*config.SSHOptions, *bool) {
+	opts := &config.SSHOptions{}
+	hasAny := false
+
+	if fa := strings.TrimSpace(fields[fieldForwardAgent]); fa != "" {
+		val := yesNoBool(fa)
+		opts.ForwardAgent = &val
+		hasAny = true
+	}
+	if comp := strings.TrimSpace(fields[fieldCompression]); comp != "" {
+		val := yesNoBool(comp)
+		opts.Compression = &val
+		hasAny = true
+	}
+	if lf := strings.TrimSpace(fields[fieldLocalForward]); lf != "" {
+		for _, part := range strings.Split(lf, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				opts.LocalForward = append(opts.LocalForward, part)
+			}
+		}
+		hasAny = true
+	}
+	if rf := strings.TrimSpace(fields[fieldRemoteForward]); rf != "" {
+		for _, part := range strings.Split(rf, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				opts.RemoteForward = append(opts.RemoteForward, part)
+			}
+		}
+		hasAny = true
+	}
+	if sai := strings.TrimSpace(fields[fieldServerAliveInterval]); sai != "" {
+		if val, err := strconv.Atoi(sai); err == nil {
+			opts.ServerAliveInterval = &val
+			hasAny = true
+		}
+	}
+	if sacm := strings.TrimSpace(fields[fieldServerAliveCountMax]); sacm != "" {
+		if val, err := strconv.Atoi(sacm); err == nil {
+			opts.ServerAliveCountMax = &val
+			hasAny = true
+		}
+	}
+	if shk := strings.TrimSpace(fields[fieldStrictHostKeyCheck]); shk != "" {
+		opts.StrictHostKeyCheck = shk
+		hasAny = true
+	}
+	if tty := strings.TrimSpace(fields[fieldRequestTTY]); tty != "" {
+		opts.RequestTTY = tty
+		hasAny = true
+	}
+	if envs := strings.TrimSpace(fields[fieldEnvVars]); envs != "" {
+		opts.EnvVars = make(map[string]string)
+		for _, pair := range strings.Split(envs, ",") {
+			pair = strings.TrimSpace(pair)
+			if parts := strings.SplitN(pair, "=", 2); len(parts) == 2 {
+				opts.EnvVars[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			}
+		}
+		if len(opts.EnvVars) > 0 {
+			hasAny = true
+		} else {
+			opts.EnvVars = nil
+		}
+	}
+	if extra := strings.TrimSpace(fields[fieldExtraOptions]); extra != "" {
+		opts.ExtraOptions = make(map[string]string)
+		for _, pair := range strings.Split(extra, ",") {
+			pair = strings.TrimSpace(pair)
+			if parts := strings.SplitN(pair, "=", 2); len(parts) == 2 {
+				opts.ExtraOptions[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			}
+		}
+		if len(opts.ExtraOptions) > 0 {
+			hasAny = true
+		} else {
+			opts.ExtraOptions = nil
+		}
+	}
+
+	var useGlobal *bool
+	if ug := strings.TrimSpace(fields[fieldUseGlobalSettings]); ug != "" {
+		val := yesNoBool(ug)
+		useGlobal = &val
+	}
+
+	if !hasAny {
+		return nil, useGlobal
+	}
+	return opts, useGlobal
+}
+
+func boolToYesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
+}
+
+func yesNoBool(s string) bool {
+	return strings.ToLower(s) == "yes" || strings.ToLower(s) == "y" || strings.ToLower(s) == "true"
 }
 
 func Run(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDir string, sshChanged bool) error {
