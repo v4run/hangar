@@ -453,21 +453,15 @@ func (m Model) filteredConnections() []config.Connection {
 		return m.cfg.Connections
 	}
 	var filtered []config.Connection
-	seen := make(map[string]bool)
 	lower := strings.ToLower(m.filterText)
 	for _, c := range m.cfg.Connections {
-		if seen[c.Name] {
-			continue
-		}
 		if strings.Contains(strings.ToLower(c.Name), lower) {
 			filtered = append(filtered, c)
-			seen[c.Name] = true
 			continue
 		}
 		for _, t := range c.Tags {
 			if strings.Contains(strings.ToLower(t), lower) {
 				filtered = append(filtered, c)
-				seen[c.Name] = true
 				break
 			}
 		}
@@ -1138,13 +1132,19 @@ func (m Model) handleGlobalSettingsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form = formNone
 	case "tab", "down":
 		m.formCursor++
+		if m.formCursor == fieldUseGlobalSettings {
+			m.formCursor++
+		}
 		if m.formCursor >= fieldAdvancedCount {
 			m.formCursor = fieldForwardAgent
 		}
 	case "shift+tab", "up":
 		m.formCursor--
+		if m.formCursor == fieldUseGlobalSettings {
+			m.formCursor--
+		}
 		if m.formCursor < fieldForwardAgent {
-			m.formCursor = fieldAdvancedCount - 1
+			m.formCursor = fieldExtraOptions
 		}
 	case "enter":
 		opts, _ := parseSSHOptionsFromFields(m.formFields)
@@ -1361,30 +1361,39 @@ func (m Model) handleTagInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form = formNone
 	case "enter":
 		if m.tagInput != "" {
-			// Look up the connection name from the UUID
 			c, err := m.cfg.FindByID(m.formTarget)
 			if err != nil {
 				m.form = formNone
 				return m, nil
 			}
-			connName := c.Name
-			var toAdd, toRemove []string
 			for _, t := range strings.Split(m.tagInput, ",") {
 				t = strings.TrimSpace(t)
 				if t == "" {
 					continue
 				}
 				if strings.HasPrefix(t, "-") {
-					toRemove = append(toRemove, t[1:])
+					// Remove tag
+					tag := t[1:]
+					filtered := c.Tags[:0]
+					for _, existing := range c.Tags {
+						if existing != tag {
+							filtered = append(filtered, existing)
+						}
+					}
+					c.Tags = filtered
 				} else {
-					toAdd = append(toAdd, t)
+					// Add tag if not present
+					found := false
+					for _, existing := range c.Tags {
+						if existing == t {
+							found = true
+							break
+						}
+					}
+					if !found {
+						c.Tags = append(c.Tags, t)
+					}
 				}
-			}
-			if len(toAdd) > 0 {
-				m.cfg.AddTags(connName, toAdd)
-			}
-			if len(toRemove) > 0 {
-				m.cfg.RemoveTags(connName, toRemove)
 			}
 			config.Save(m.configDir, m.cfg)
 		}
