@@ -145,11 +145,7 @@ func (m Model) renderSidebar() string {
 	b.WriteString("\n")
 
 	// Determine visible slice
-	// Reduce by 1 to account for the tooltip line on the focused connection row
 	renderRows := visibleRows
-	if m.focus == focusSidebar && m.cursor >= m.sidebarOffset && m.cursor < len(items) && !items[m.cursor].isGroup {
-		renderRows--
-	}
 	start := m.sidebarOffset
 	end := start + renderRows
 	if end > len(items) {
@@ -216,10 +212,6 @@ func (m Model) renderSidebar() string {
 			}
 			if isCursor {
 				b.WriteString(cursorStyle.Render("> ") + indent[2:] + selectedStyle.Render(displayName) + mark)
-				// Show user@host:port tooltip on focused row
-				b.WriteString("\n")
-				tooltip := fmt.Sprintf("%s@%s:%d", item.conn.User, item.conn.Host, item.conn.Port)
-				b.WriteString(indent + dimStyle.Render(tooltip))
 			} else {
 				b.WriteString(indent + normalStyle.Render(displayName) + mark)
 			}
