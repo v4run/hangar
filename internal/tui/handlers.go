@@ -95,6 +95,8 @@ func (m Model) handleFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formEditing = true
 		m.formEditBuf = m.formFields[m.formCursor]
 		if m.formCursor == fieldJump {
+			// Convert UUID to display name for editing
+			m.formFields[fieldJump] = m.jumpHostDisplay(m.formFields[fieldJump])
 			m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
 			m.jumpSugCursor = 0
 		}
@@ -116,15 +118,23 @@ func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// If on JumpHost with suggestions, select the highlighted one
 		if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 && m.jumpSugCursor >= 0 && m.jumpSugCursor < len(m.jumpSuggestions) {
 			selected := m.jumpSuggestions[m.jumpSugCursor]
-			m.formFields[fieldJump] = selected.Name
+			m.formFields[fieldJump] = selected.ID.String()
 			m.jumpSuggestions = nil
 			m.jumpSugCursor = 0
+			m.formEditing = false
 			return m, nil
 		}
 		// Confirm edit, return to nav mode
+		if m.formCursor == fieldJump {
+			// Resolve typed name back to UUID for storage
+			m.formFields[fieldJump] = m.jumpHostResolve(m.formFields[fieldJump])
+		}
 		m.formEditing = false
 		m.jumpSuggestions = nil
 	case "ctrl+s":
+		if m.formCursor == fieldJump {
+			m.formFields[fieldJump] = m.jumpHostResolve(m.formFields[fieldJump])
+		}
 		m.formEditing = false
 		return m.saveForm()
 	case "ctrl+n":

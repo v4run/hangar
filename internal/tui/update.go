@@ -309,14 +309,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if existingPass == "" {
 						existingPass, _ = config.GetPassword(c.Name)
 					}
-					jumpDisplay := m.jumpHostDisplay(c.JumpHost)
 					m.formFields = make([]string, fieldAdvancedCount)
 					m.formFields[fieldName] = c.Name
 					m.formFields[fieldHost] = c.Host
 					m.formFields[fieldPort] = fmt.Sprintf("%d", c.Port)
 					m.formFields[fieldUser] = c.User
 					m.formFields[fieldKey] = c.IdentityFile
-					m.formFields[fieldJump] = jumpDisplay
+					m.formFields[fieldJump] = c.JumpHost
 					m.formFields[fieldGroup] = c.Group
 					m.formFields[fieldTags] = strings.Join(c.Tags, ", ")
 					m.formFields[fieldPassword] = existingPass

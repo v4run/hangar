@@ -16,9 +16,6 @@ var (
 	statusBarStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("8"))
 
-	statusKeyStyle = lipgloss.NewStyle().
-			Bold(true)
-
 	// List items
 	selectedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("13")).
@@ -63,11 +60,6 @@ var (
 	// SSH command style — dim monospace feel
 	sshCmdStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("8"))
-
-	// Detail label — fixed width for alignment
-	detailLabelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("8")).
-				Width(7)
 
 	// Form
 	activeFieldStyle = lipgloss.NewStyle().

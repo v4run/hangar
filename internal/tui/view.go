@@ -126,7 +126,7 @@ func (m Model) renderSidebar() string {
 	var b strings.Builder
 
 	// Sidebar header
-	b.WriteString(dimStyle.Render(" ▞▚ ") + headerStyle.Render("hangar"))
+	b.WriteString(titleStyle.Render(" ▞▚  hangar"))
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render(" " + strings.Repeat("─", sidebarW-1)))
 	b.WriteString("\n")
@@ -185,8 +185,8 @@ func (m Model) renderSidebar() string {
 			}
 
 			// Right-align the count
-			nameWidth := len(arrow) + 1 + len(groupName)
-			padWidth := sidebarW - 2 - nameWidth - len(countStr) // 2 for leading spaces
+			nameWidth := lipgloss.Width(arrow) + 1 + lipgloss.Width(groupName)
+			padWidth := sidebarW - 2 - nameWidth - lipgloss.Width(countStr) // 2 for leading spaces
 			if padWidth < 1 {
 				padWidth = 1
 			}
@@ -196,8 +196,9 @@ func (m Model) renderSidebar() string {
 				// Full-width background highlight for selected group
 				row := " " + arrow + " " + groupName + pad + countStr
 				// Pad to full sidebar width
-				if len(row) < sidebarW {
-					row += strings.Repeat(" ", sidebarW-len(row))
+				rowW := lipgloss.Width(row)
+				if rowW < sidebarW {
+					row += strings.Repeat(" ", sidebarW-rowW)
 				}
 				b.WriteString(sidebarSelectedStyle.Render(row))
 			} else {
@@ -228,12 +229,10 @@ func (m Model) renderSidebar() string {
 			if isCursor {
 				// Full-width background highlight for selected connection
 				row := indent + displayName
-				markLen := 0
-				if mark != "" {
-					markLen = 2
-				}
-				if len(row)+markLen < sidebarW {
-					row += strings.Repeat(" ", sidebarW-len(row)-markLen)
+				markW := lipgloss.Width(mark)
+				rowW := lipgloss.Width(row)
+				if rowW+markW < sidebarW {
+					row += strings.Repeat(" ", sidebarW-rowW-markW)
 				}
 				b.WriteString(sidebarSelectedStyle.Render(row) + mark)
 			} else {
@@ -343,23 +342,23 @@ func (m Model) renderMainPane() string {
 	b.WriteString("\n")
 
 	if c.IdentityFile != "" {
-		b.WriteString(detailLabelStyle.Render("key") + normalStyle.Render(c.IdentityFile))
+		b.WriteString(labelStyle.Render("key") + normalStyle.Render(c.IdentityFile))
 		b.WriteString("\n")
 	}
 	if c.JumpHost != "" {
-		b.WriteString(detailLabelStyle.Render("jump") + normalStyle.Render(m.jumpHostDisplay(c.JumpHost)))
+		b.WriteString(labelStyle.Render("jump") + normalStyle.Render(m.jumpHostDisplay(c.JumpHost)))
 		b.WriteString("\n")
 	}
 	if pass, err := config.GetPassword(c.ID.String()); (err == nil && pass != "") {
-		b.WriteString(detailLabelStyle.Render("pass") + dimStyle.Render("********"))
+		b.WriteString(labelStyle.Render("pass") + dimStyle.Render("********"))
 		b.WriteString("\n")
 	} else if pass, err := config.GetPassword(c.Name); err == nil && pass != "" {
-		b.WriteString(detailLabelStyle.Render("pass") + dimStyle.Render("********"))
+		b.WriteString(labelStyle.Render("pass") + dimStyle.Render("********"))
 		b.WriteString("\n")
 	}
 
 	if len(c.Tags) > 0 {
-		b.WriteString(detailLabelStyle.Render("tags"))
+		b.WriteString(labelStyle.Render("tags"))
 		for i, t := range c.Tags {
 			if i > 0 {
 				b.WriteString(" ")
@@ -370,7 +369,7 @@ func (m Model) renderMainPane() string {
 	}
 
 	if c.Notes != "" {
-		b.WriteString(detailLabelStyle.Render("notes") + valueStyle.Render(c.Notes))
+		b.WriteString(labelStyle.Render("notes") + valueStyle.Render(c.Notes))
 		b.WriteString("\n")
 	}
 
@@ -431,6 +430,10 @@ func (m Model) renderForm() string {
 		value := m.formFields[i]
 		if i == fieldPassword && value != "" {
 			value = strings.Repeat("*", len(value))
+		}
+		// Show display name for jump host when not editing
+		if i == fieldJump && !(m.formEditing && i == m.formCursor) {
+			value = m.jumpHostDisplay(value)
 		}
 
 		label := labelStyle.Render(strings.ToLower(fieldLabels[i]))
