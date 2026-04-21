@@ -305,11 +305,12 @@ func (m Model) renderMainPane() string {
 	}
 
 	if len(c.Tags) > 0 {
+		b.WriteString(dimStyle.Render("tags "))
 		for i, t := range c.Tags {
 			if i > 0 {
-				b.WriteString(dimStyle.Render(", "))
+				b.WriteString(" ")
 			}
-			b.WriteString(tagStyle.Render(t))
+			b.WriteString(tagStyle.Render("["+t+"]"))
 		}
 		b.WriteString("\n")
 	}
