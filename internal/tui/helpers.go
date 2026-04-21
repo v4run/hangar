@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
 )
@@ -14,7 +15,8 @@ import (
 // sectionDivider renders a labeled horizontal rule for form sections.
 func sectionDivider(label string, width int) string {
 	prefix := "── " + label + " "
-	remaining := width - len(prefix)
+	prefixWidth := lipgloss.Width(prefix)
+	remaining := width - prefixWidth
 	if remaining < 2 {
 		remaining = 2
 	}

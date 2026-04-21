@@ -323,7 +323,7 @@ func (m Model) renderMainPane() string {
 	}
 
 	var b strings.Builder
-	detailW := m.width - 29
+	detailW := m.width - 31 // sidebar(26) + border(1) + mainPane paddingLeft(2) + margin(2)
 	if detailW < 40 {
 		detailW = 40
 	}
