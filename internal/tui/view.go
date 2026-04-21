@@ -57,74 +57,84 @@ func (m Model) renderStatusBar() string {
 			glyph = "\u25b8"
 			glyphStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("13"))
 		}
+		brand := dimStyle.Render(" hangar") + dimStyle.Render(" │")
 		left := " " + glyphStyle.Render(glyph) + " " + m.activeToast.text
 		right := "enter:connect  /:find  q:quit"
-		gap := m.width - lipgloss.Width(left) - len(right) - 1
+		gap := m.width - lipgloss.Width(brand) - lipgloss.Width(left) - len(right) - 1
 		if gap < 1 {
 			gap = 1
 		}
-		bar := left + strings.Repeat(" ", gap) + dimStyle.Render(right)
+		bar := brand + left + strings.Repeat(" ", gap) + dimStyle.Render(right)
 		return statusBarStyle.Render(bar)
 	}
 
-	var bar string
+	brand := dimStyle.Render(" hangar") + dimStyle.Render(" │")
+
+	var hints string
 	switch {
 	case m.visualMode:
-		bar = cursorStyle.Render(" -- VISUAL -- ") + dimStyle.Render("  j/k:extend  x:cut  y:copy  esc:cancel")
-		return statusBarStyle.Render(bar)
+		hints = cursorStyle.Render(" -- VISUAL -- ") + dimStyle.Render("  j/k:extend  x:cut  y:copy  esc:cancel")
+		return statusBarStyle.Render(brand + hints)
 	case m.form == formAdd || m.form == formEdit:
 		if m.formEditing {
-			bar = " " + cursorStyle.Render("-- INSERT --") + "  enter:confirm  esc:discard  ctrl+s:save"
+			hints = " " + cursorStyle.Render("-- INSERT --") + "  enter:confirm  esc:discard  ctrl+s:save"
 		} else {
-			bar = " j/k:navigate  h/l:toggle  enter:edit  ctrl+s:save  esc:cancel"
+			hints = " j/k:navigate  h/l:toggle  enter:edit  ctrl+s:save  esc:cancel"
 		}
 	case m.form == formDelete || m.form == formDeleteScript || m.form == formDeleteGroup:
-		bar = " y:confirm  esc:cancel"
+		hints = " y:confirm  esc:cancel"
 	case m.form == formAddGroup || m.form == formEditGroup:
-		bar = " enter:save  esc:cancel"
+		hints = " enter:save  esc:cancel"
 	case m.form == formGlobalSettings:
 		if m.formEditing {
-			bar = " " + cursorStyle.Render("-- INSERT --") + "  enter:confirm  esc:discard  ctrl+s:save"
+			hints = " " + cursorStyle.Render("-- INSERT --") + "  enter:confirm  esc:discard  ctrl+s:save"
 		} else {
-			bar = " j/k:navigate  h/l:toggle  enter:edit  ctrl+s:save  esc:cancel"
+			hints = " j/k:navigate  h/l:toggle  enter:edit  ctrl+s:save  esc:cancel"
 		}
 	case m.form == formTag:
-		bar = " enter:save  esc:cancel  (prefix with - to remove)"
+		hints = " enter:save  esc:cancel  (prefix with - to remove)"
 	case m.form == formPasteConfirm:
-		bar = " r:rename  s:skip  esc:cancel"
+		hints = " r:rename  s:skip  esc:cancel"
 	case m.form == formSync:
-		bar = " space:toggle  a:all  n:none  /:filter  enter:import  esc:cancel"
+		hints = " space:toggle  a:all  n:none  /:filter  enter:import  esc:cancel"
 	case m.form == formAddScript || m.form == formEditScript:
-		bar = " tab:next  enter:save  esc:cancel"
+		hints = " tab:next  enter:save  esc:cancel"
 	case m.form == formEditNotes:
-		bar = " enter:save  esc:cancel"
+		hints = " enter:save  esc:cancel"
 	case m.focus == focusScripts:
 		if m.width >= 120 {
-			bar = " n:new  e:edit  d:del  enter:run  o:notes  h:back  ?:help  q:quit"
+			hints = " n:new  e:edit  d:del  enter:run  o:notes  h:back  ?:help  q:quit"
 		} else if m.width >= 80 {
-			bar = " n:new  e:edit  d:del  enter:run  h:back  ?:help  q:quit"
+			hints = " n:new  e:edit  d:del  enter:run  h:back  ?:help  q:quit"
 		} else {
-			bar = " ?:help  q:quit"
+			hints = " ?:help  q:quit"
 		}
 	default:
 		if m.width >= 120 {
-			bar = " n:new  e:edit  d:del  g:group  x:cut  y:copy  p:paste  G:settings  enter:connect  s:sync  t:tag  l:scripts  /:find  ?:help  q:quit"
+			hints = " n:new  e:edit  d:del  g:group  x:cut  y:copy  p:paste  G:settings  enter:connect  s:sync  t:tag  l:scripts  /:find  ?:help  q:quit"
 		} else if m.width >= 80 {
-			bar = " n:new  e:edit  d:del  enter:connect  /:find  ?:help  q:quit"
+			hints = " n:new  e:edit  d:del  enter:connect  /:find  ?:help  q:quit"
 		} else {
-			bar = " ?:help  q:quit"
+			hints = " ?:help  q:quit"
 		}
 	}
-	return statusBarStyle.Render(bar)
+	return statusBarStyle.Render(brand + hints)
 }
 
 func (m Model) renderSidebar() string {
+	sidebarW := 24 // usable width inside sidebar (26 minus border)
 	var b strings.Builder
 
+	// Sidebar header
+	b.WriteString(dimStyle.Render(" ▞▚ ") + headerStyle.Render("hangar"))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render(" " + strings.Repeat("─", sidebarW-1)))
+	b.WriteString("\n")
+
 	if m.filtering {
-		b.WriteString(dimStyle.Render("/") + " " + normalStyle.Render(m.filterText) + cursorStyle.Render("_"))
+		b.WriteString(dimStyle.Render(" /") + " " + normalStyle.Render(m.filterText) + cursorStyle.Render("_"))
 	} else if m.filterText != "" {
-		b.WriteString(dimStyle.Render("/ " + m.filterText))
+		b.WriteString(dimStyle.Render(" / " + m.filterText))
 	}
 	b.WriteString("\n")
 
@@ -165,28 +175,33 @@ func (m Model) renderSidebar() string {
 					n++
 				}
 			}
-			countStr := ""
 			if m.collapsed[item.group] {
 				arrow = "▸"
-				countStr = fmt.Sprintf("(%d)", n)
-			} else {
-				if n == 0 {
-					countStr = "(empty)"
-				} else {
-					countStr = fmt.Sprintf("(%d)", n)
-				}
 			}
-			// Right-align the count badge
-			nameWidth := len(arrow) + 1 + len(item.group)
-			padWidth := 22 - nameWidth - len(countStr)
+			groupName := strings.ToUpper(item.group)
+			countStr := fmt.Sprintf("%d", n)
+			if n == 0 && !m.collapsed[item.group] {
+				countStr = "·"
+			}
+
+			// Right-align the count
+			nameWidth := len(arrow) + 1 + len(groupName)
+			padWidth := sidebarW - 2 - nameWidth - len(countStr) // 2 for leading spaces
 			if padWidth < 1 {
 				padWidth = 1
 			}
 			pad := strings.Repeat(" ", padWidth)
+
 			if isCursor {
-				b.WriteString(cursorStyle.Render("> ") + selectedStyle.Render(arrow+" "+item.group) + pad + dimStyle.Render(countStr))
+				// Full-width background highlight for selected group
+				row := " " + arrow + " " + groupName + pad + countStr
+				// Pad to full sidebar width
+				if len(row) < sidebarW {
+					row += strings.Repeat(" ", sidebarW-len(row))
+				}
+				b.WriteString(sidebarSelectedStyle.Render(row))
 			} else {
-				b.WriteString("  " + headerStyle.Render(arrow+" "+item.group) + pad + dimStyle.Render(countStr))
+				b.WriteString(" " + groupStyle.Render(arrow+" "+groupName) + pad + dimStyle.Render(countStr))
 			}
 		} else {
 			indent := "  "
@@ -195,23 +210,32 @@ func (m Model) renderSidebar() string {
 			}
 			mark := ""
 			if m.isInVisualRange(i) {
-				mark = dimStyle.Render(" \u00b7")
+				mark = dimStyle.Render(" ·")
 			} else if m.cutConnections[item.conn.ID] {
 				mark = dimStyle.Render(" ~")
 			} else if m.copyConnections[item.conn.ID] {
 				mark = dimStyle.Render(" +")
 			}
 			// Compute available width for name truncation
-			availWidth := 20
-			if item.conn.Group == "" {
-				availWidth = 22
+			availWidth := sidebarW - len(indent)
+			if len(mark) > 0 {
+				availWidth -= 2
 			}
 			displayName := item.conn.Name
 			if len(displayName) > availWidth {
 				displayName = displayName[:availWidth-1] + "…"
 			}
 			if isCursor {
-				b.WriteString(cursorStyle.Render("> ") + indent[2:] + selectedStyle.Render(displayName) + mark)
+				// Full-width background highlight for selected connection
+				row := indent + displayName
+				markLen := 0
+				if mark != "" {
+					markLen = 2
+				}
+				if len(row)+markLen < sidebarW {
+					row += strings.Repeat(" ", sidebarW-len(row)-markLen)
+				}
+				b.WriteString(sidebarSelectedStyle.Render(row) + mark)
 			} else {
 				b.WriteString(indent + normalStyle.Render(displayName) + mark)
 			}
@@ -270,7 +294,24 @@ func (m Model) renderMainPane() string {
 		// Cursor might be on a group header
 		items := m.sidebarItems()
 		if m.cursor < len(items) && items[m.cursor].isGroup {
-			return dimStyle.Render("group: " + items[m.cursor].group + "\n\npress space to expand/collapse")
+			groupName := items[m.cursor].group
+			n := 0
+			for _, c := range m.cfg.Connections {
+				if c.Group == groupName {
+					n++
+				}
+			}
+			var gb strings.Builder
+			gb.WriteString(titleStyle.Render(strings.ToUpper(groupName)))
+			gb.WriteString("\n")
+			gb.WriteString(dimStyle.Render(fmt.Sprintf("%d connections", n)))
+			gb.WriteString("\n\n")
+			gb.WriteString(dimStyle.Render("space") + normalStyle.Render("  toggle collapse"))
+			gb.WriteString("\n")
+			gb.WriteString(dimStyle.Render("e") + normalStyle.Render("      rename group"))
+			gb.WriteString("\n")
+			gb.WriteString(dimStyle.Render("d") + normalStyle.Render("      delete group"))
+			return gb.String()
 		}
 		if len(m.filteredConnections()) == 0 {
 			if m.filterText != "" {
@@ -282,30 +323,43 @@ func (m Model) renderMainPane() string {
 	}
 
 	var b strings.Builder
+	detailW := m.width - 29
+	if detailW < 40 {
+		detailW = 40
+	}
 
-	// Connection info (compact)
+	// Connection name
 	b.WriteString(titleStyle.Render(c.Name))
-	b.WriteString("  " + dimStyle.Render(fmt.Sprintf("%s@%s:%d", c.User, c.Host, c.Port)))
+	b.WriteString("\n")
+
+	// SSH command line
+	sshCmd := fmt.Sprintf("ssh %s@%s", c.User, c.Host)
+	if c.Port != 22 {
+		sshCmd += fmt.Sprintf(" -p %d", c.Port)
+	}
+	b.WriteString(sshCmdStyle.Render(sshCmd))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render(strings.Repeat("─", detailW)))
 	b.WriteString("\n")
 
 	if c.IdentityFile != "" {
-		b.WriteString(dimStyle.Render("key " + c.IdentityFile))
+		b.WriteString(detailLabelStyle.Render("key") + normalStyle.Render(c.IdentityFile))
 		b.WriteString("\n")
 	}
 	if c.JumpHost != "" {
-		b.WriteString(dimStyle.Render("via " + m.jumpHostDisplay(c.JumpHost)))
+		b.WriteString(detailLabelStyle.Render("jump") + normalStyle.Render(m.jumpHostDisplay(c.JumpHost)))
 		b.WriteString("\n")
 	}
 	if pass, err := config.GetPassword(c.ID.String()); (err == nil && pass != "") {
-		b.WriteString(dimStyle.Render("pass ********"))
+		b.WriteString(detailLabelStyle.Render("pass") + dimStyle.Render("********"))
 		b.WriteString("\n")
 	} else if pass, err := config.GetPassword(c.Name); err == nil && pass != "" {
-		b.WriteString(dimStyle.Render("pass ********"))
+		b.WriteString(detailLabelStyle.Render("pass") + dimStyle.Render("********"))
 		b.WriteString("\n")
 	}
 
 	if len(c.Tags) > 0 {
-		b.WriteString(dimStyle.Render("tags "))
+		b.WriteString(detailLabelStyle.Render("tags"))
 		for i, t := range c.Tags {
 			if i > 0 {
 				b.WriteString(" ")
@@ -315,19 +369,16 @@ func (m Model) renderMainPane() string {
 		b.WriteString("\n")
 	}
 
-	// Notes
 	if c.Notes != "" {
-		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("notes "))
-		b.WriteString(valueStyle.Render(c.Notes))
+		b.WriteString(detailLabelStyle.Render("notes") + valueStyle.Render(c.Notes))
 		b.WriteString("\n")
 	}
 
 	// Scripts section
 	b.WriteString("\n")
-	b.WriteString(headerStyle.Render("Scripts"))
+	b.WriteString(sectionDivider("scripts", detailW))
 	if m.focus == focusScripts {
-		b.WriteString(dimStyle.Render("  (l to focus)"))
+		b.WriteString("  " + dimStyle.Render("(l to focus)"))
 	}
 	b.WriteString("\n\n")
 

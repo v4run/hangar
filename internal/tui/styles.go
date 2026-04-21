@@ -36,6 +36,11 @@ var (
 	headerStyle = lipgloss.NewStyle().
 			Bold(true)
 
+	// Group header in sidebar — dim, uppercase feel
+	groupStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")).
+			Bold(true)
+
 	// Detail pane
 	labelStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("8")).
@@ -48,6 +53,21 @@ var (
 
 	tagStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("14"))
+
+	// Sidebar selected row background highlight
+	sidebarSelectedStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("236")).
+				Bold(true).
+				Foreground(lipgloss.Color("13"))
+
+	// SSH command style — dim monospace feel
+	sshCmdStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8"))
+
+	// Detail label — fixed width for alignment
+	detailLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("8")).
+				Width(7)
 
 	// Form
 	activeFieldStyle = lipgloss.NewStyle().

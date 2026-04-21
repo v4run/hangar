@@ -23,8 +23,8 @@ func sectionDivider(label string, width int) string {
 
 // sidebarVisibleRows returns how many sidebar items fit in the viewport.
 func (m Model) sidebarVisibleRows() int {
-	// Reserve lines: filter row, blank line after filter, bottom indicator line, status bar
-	rows := m.height - 4
+	// Reserve lines: header (2), filter row, blank line after filter, bottom indicator line, status bar
+	rows := m.height - 6
 	if rows < 1 {
 		rows = 1
 	}
