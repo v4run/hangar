@@ -77,9 +77,9 @@ func (m Model) renderStatusBar() string {
 		return statusBarStyle.Render(brand + hints)
 	case m.form == formAdd || m.form == formEdit:
 		if m.formEditing {
-			hints = " " + cursorStyle.Render("-- INSERT --") + "  enter:confirm  esc:discard  ctrl+s:save"
+			hints = " " + cursorStyle.Render("-- INSERT --") + "  h/l:toggle  enter:confirm  esc:discard  ctrl+s:save"
 		} else {
-			hints = " j/k:navigate  h/l:toggle  enter:edit  ctrl+s:save  esc:cancel"
+			hints = " j/k:navigate  enter:edit  ctrl+s:save  esc:cancel"
 		}
 	case m.form == formDelete || m.form == formDeleteScript || m.form == formDeleteGroup:
 		hints = " y:confirm  esc:cancel"
@@ -87,9 +87,9 @@ func (m Model) renderStatusBar() string {
 		hints = " enter:save  esc:cancel"
 	case m.form == formGlobalSettings:
 		if m.formEditing {
-			hints = " " + cursorStyle.Render("-- INSERT --") + "  enter:confirm  esc:discard  ctrl+s:save"
+			hints = " " + cursorStyle.Render("-- INSERT --") + "  h/l:toggle  enter:confirm  esc:discard  ctrl+s:save"
 		} else {
-			hints = " j/k:navigate  h/l:toggle  enter:edit  ctrl+s:save  esc:cancel"
+			hints = " j/k:navigate  enter:edit  ctrl+s:save  esc:cancel"
 		}
 	case m.form == formTag:
 		hints = " enter:save  esc:cancel  (prefix with - to remove)"
