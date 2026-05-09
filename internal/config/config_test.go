@@ -1,6 +1,9 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -332,5 +335,73 @@ func TestMigrateNoOpOnEmptyConfig(t *testing.T) {
 	}
 	if len(cfg.Groups) != 0 {
 		t.Fatalf("expected empty Groups, got %d entries", len(cfg.Groups))
+	}
+}
+
+func TestGroupListSaveAndLoadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{ID: uuid.New(), Name: "a", Host: "h", Port: 22, User: "u", Group: "prod"},
+		},
+		Groups: GroupList{"prod", "staging", "dev"},
+	}
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []string{"prod", "staging", "dev"}
+	if len(loaded.Groups) != len(want) {
+		t.Fatalf("len: got %d, want %d", len(loaded.Groups), len(want))
+	}
+	for i := range want {
+		if loaded.Groups[i] != want[i] {
+			t.Fatalf("Groups[%d]: got %q, want %q", i, loaded.Groups[i], want[i])
+		}
+	}
+}
+
+func TestLegacyMapUpgradeOnLoad(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte("connections: []\ngroups:\n  prod: true\n  dev: true\n")
+	if err := os.WriteFile(filepath.Join(dir, "connections.yaml"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []string{"dev", "prod"}
+	if len(loaded.Groups) != len(want) {
+		t.Fatalf("len: got %d, want %d", len(loaded.Groups), len(want))
+	}
+	for i := range want {
+		if loaded.Groups[i] != want[i] {
+			t.Fatalf("Groups[%d]: got %q, want %q", i, loaded.Groups[i], want[i])
+		}
+	}
+	// Reload to confirm the file was rewritten as a sequence (i.e., the
+	// previous Load triggered Migrate's save-back path).
+	reloaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if len(reloaded.Groups) != len(want) {
+		t.Fatalf("reloaded len: got %d, want %d", len(reloaded.Groups), len(want))
+	}
+	// Confirm the on-disk YAML was rewritten in sequence form (Migrate ran
+	// and Save was called).
+	rewritten, err := os.ReadFile(filepath.Join(dir, "connections.yaml"))
+	if err != nil {
+		t.Fatalf("read rewritten: %v", err)
+	}
+	if !strings.Contains(string(rewritten), "groups:") {
+		t.Fatalf("expected groups: key in rewritten file:\n%s", rewritten)
+	}
+	if strings.Contains(string(rewritten), "true") {
+		t.Fatalf("expected sequence form (no 'true' values), got map form:\n%s", rewritten)
 	}
 }

@@ -153,6 +153,11 @@ func (cfg *HangarConfig) FilterByTag(tag string) []Connection {
 
 func (cfg *HangarConfig) Migrate() bool {
 	changed := false
+	// If groups were loaded from the legacy map form, rewrite to sequence form.
+	if cfg.groupsFromLegacyMap {
+		cfg.groupsFromLegacyMap = false
+		changed = true
+	}
 	for i := range cfg.Connections {
 		if cfg.Connections[i].ID == uuid.Nil {
 			cfg.Connections[i].ID = uuid.New()

@@ -57,6 +57,35 @@ type HangarConfig struct {
 	SSHSync       SSHSync      `yaml:"ssh_sync"`
 	GlobalScripts []Script     `yaml:"global_scripts,omitempty"`
 	Groups        GroupList    `yaml:"groups,omitempty"`
+
+	// groupsFromLegacyMap is set by UnmarshalYAML when the on-disk groups
+	// field was written in the old map[string]bool form. Migrate() uses this
+	// to trigger a Save even when there are no structural changes.
+	groupsFromLegacyMap bool
+}
+
+// UnmarshalYAML deserializes HangarConfig and records whether the groups field
+// was in the legacy map form so that Migrate() can trigger a format upgrade.
+func (cfg *HangarConfig) UnmarshalYAML(node *yaml.Node) error {
+	// Use a type alias to avoid infinite recursion.
+	type hangarConfigAlias HangarConfig
+	var alias hangarConfigAlias
+	if err := node.Decode(&alias); err != nil {
+		return err
+	}
+	*cfg = HangarConfig(alias)
+
+	// Walk the mapping to detect whether the groups field used the legacy
+	// map[string]bool form.
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		keyNode := node.Content[i]
+		valueNode := node.Content[i+1]
+		if keyNode.Value == "groups" && valueNode.Kind == yaml.MappingNode {
+			cfg.groupsFromLegacyMap = true
+			break
+		}
+	}
+	return nil
 }
 
 // GroupList is an ordered list of group names. It accepts both legacy
