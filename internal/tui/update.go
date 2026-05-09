@@ -430,20 +430,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.visualAnchor = m.cursor
 			}
 		case "J":
-			// Swap current item with the one below
 			items := m.sidebarItems()
-			if m.cursor < len(items)-1 {
+			if m.cursor >= len(items) {
+				break
+			}
+			item := items[m.cursor]
+			if item.isGroup {
+				m.swapGroupOrder(item.group, +1)
+				m.cursor = m.locateCursor(item)
+			} else if m.cursor < len(items)-1 {
 				m.swapSidebarItems(m.cursor, m.cursor+1)
 				m.cursor++
-				m.adjustSidebarViewport()
 			}
+			m.adjustSidebarViewport()
 		case "K":
-			// Swap current item with the one above
-			if m.cursor > 0 {
+			if m.cursor == 0 {
+				break
+			}
+			items := m.sidebarItems()
+			if m.cursor >= len(items) {
+				break
+			}
+			item := items[m.cursor]
+			if item.isGroup {
+				m.swapGroupOrder(item.group, -1)
+				m.cursor = m.locateCursor(item)
+			} else {
 				m.swapSidebarItems(m.cursor, m.cursor-1)
 				m.cursor--
-				m.adjustSidebarViewport()
 			}
+			m.adjustSidebarViewport()
 		case "t":
 			c := m.selectedConnection()
 			if c != nil {

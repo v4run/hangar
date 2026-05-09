@@ -442,6 +442,47 @@ func (m *Model) swapSidebarItems(i, j int) {
 	}
 }
 
+// swapGroupOrder swaps the named group with its neighbor by `dir` (-1 or +1)
+// in cfg.Groups. Persists on success.
+func (m *Model) swapGroupOrder(name string, dir int) {
+	idx := groupIndex(m.cfg.Groups, name)
+	if idx < 0 {
+		return
+	}
+	target := idx + dir
+	if target < 0 || target >= len(m.cfg.Groups) {
+		return
+	}
+	m.cfg.Groups[idx], m.cfg.Groups[target] = m.cfg.Groups[target], m.cfg.Groups[idx]
+	config.Save(m.configDir, m.cfg)
+}
+
+// locateCursor returns the index of the given sidebar item in the (rebuilt)
+// flat list. Used to keep the cursor anchored on the same logical item after
+// a reorder reflows the sidebar. Returns clamped fallback if the item is
+// somehow gone.
+func (m Model) locateCursor(item sidebarItem) int {
+	items := m.sidebarItems()
+	for i, it := range items {
+		if item.isGroup {
+			if it.isGroup && it.group == item.group {
+				return i
+			}
+			continue
+		}
+		if !it.isGroup && it.conn != nil && item.conn != nil && it.conn.ID == item.conn.ID {
+			return i
+		}
+	}
+	if len(items) == 0 {
+		return 0
+	}
+	if m.cursor >= len(items) {
+		return len(items) - 1
+	}
+	return m.cursor
+}
+
 func relativeTime(t time.Time) string {
 	d := time.Since(t)
 	switch {
