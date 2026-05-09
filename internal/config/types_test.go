@@ -1,7 +1,6 @@
 package config
 
 import (
-	"sort"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -45,12 +44,10 @@ groups:
 	if len(cfg.Groups) != 3 {
 		t.Fatalf("len: got %d, want 3", len(cfg.Groups))
 	}
-	got := []string(cfg.Groups)
-	sort.Strings(got) // we expect deterministic alphabetical order
 	want := []string{"dev", "prod", "staging"}
 	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("Groups[%d]: got %q, want %q", i, got[i], want[i])
+		if cfg.Groups[i] != want[i] {
+			t.Fatalf("Groups[%d]: got %q, want %q", i, cfg.Groups[i], want[i])
 		}
 	}
 }
