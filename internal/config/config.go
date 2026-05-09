@@ -173,7 +173,7 @@ func (cfg *HangarConfig) Migrate() bool {
 		}
 	}
 	// Backfill Groups slice from connection-referenced groups.
-	have := make(map[string]bool, len(cfg.Groups))
+	have := make(map[string]bool, len(cfg.Groups)+len(cfg.Connections))
 	for _, g := range cfg.Groups {
 		have[g] = true
 	}

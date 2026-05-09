@@ -315,9 +315,22 @@ func TestMigrateIdempotentOnHealthyConfig(t *testing.T) {
 		t.Fatal("expected Migrate to be a no-op on healthy config")
 	}
 	want := []string{"prod", "dev"}
+	if len(cfg.Groups) != len(want) {
+		t.Fatalf("len changed: got %d, want %d", len(cfg.Groups), len(want))
+	}
 	for i := range want {
 		if cfg.Groups[i] != want[i] {
 			t.Fatalf("Groups[%d]: got %q, want %q", i, cfg.Groups[i], want[i])
 		}
+	}
+}
+
+func TestMigrateNoOpOnEmptyConfig(t *testing.T) {
+	cfg := &HangarConfig{}
+	if cfg.Migrate() {
+		t.Fatal("expected Migrate to be a no-op on empty config")
+	}
+	if len(cfg.Groups) != 0 {
+		t.Fatalf("expected empty Groups, got %d entries", len(cfg.Groups))
 	}
 }
