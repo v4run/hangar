@@ -260,3 +260,64 @@ func TestAddConnectionValidation(t *testing.T) {
 		t.Fatal("expected error for zero port")
 	}
 }
+
+func TestMigrateBackfillsGroups(t *testing.T) {
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{ID: uuid.New(), Name: "a", Host: "h", Port: 22, User: "u", Group: "prod"},
+			{ID: uuid.New(), Name: "b", Host: "h", Port: 22, User: "u", Group: "dev"},
+			{ID: uuid.New(), Name: "c", Host: "h", Port: 22, User: "u", Group: "prod"},
+		},
+	}
+	if !cfg.Migrate() {
+		t.Fatal("expected Migrate to report changes")
+	}
+	want := []string{"dev", "prod"}
+	if len(cfg.Groups) != len(want) {
+		t.Fatalf("len: got %d, want %d", len(cfg.Groups), len(want))
+	}
+	for i := range want {
+		if cfg.Groups[i] != want[i] {
+			t.Fatalf("Groups[%d]: got %q, want %q", i, cfg.Groups[i], want[i])
+		}
+	}
+}
+
+func TestMigrateAppendsOrphanGroup(t *testing.T) {
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{ID: uuid.New(), Name: "a", Host: "h", Port: 22, User: "u", Group: "newgroup"},
+		},
+		Groups: GroupList{"existing"},
+	}
+	if !cfg.Migrate() {
+		t.Fatal("expected Migrate to report changes")
+	}
+	want := []string{"existing", "newgroup"}
+	if len(cfg.Groups) != len(want) {
+		t.Fatalf("len: got %d, want %d (Groups=%v)", len(cfg.Groups), len(want), cfg.Groups)
+	}
+	for i := range want {
+		if cfg.Groups[i] != want[i] {
+			t.Fatalf("Groups[%d]: got %q, want %q", i, cfg.Groups[i], want[i])
+		}
+	}
+}
+
+func TestMigrateIdempotentOnHealthyConfig(t *testing.T) {
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{ID: uuid.New(), Name: "a", Host: "h", Port: 22, User: "u", Group: "prod"},
+		},
+		Groups: GroupList{"prod", "dev"},
+	}
+	if cfg.Migrate() {
+		t.Fatal("expected Migrate to be a no-op on healthy config")
+	}
+	want := []string{"prod", "dev"}
+	for i := range want {
+		if cfg.Groups[i] != want[i] {
+			t.Fatalf("Groups[%d]: got %q, want %q", i, cfg.Groups[i], want[i])
+		}
+	}
+}

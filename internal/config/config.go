@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
@@ -170,6 +171,23 @@ func (cfg *HangarConfig) Migrate() bool {
 			cfg.Connections[i].JumpHost = target.ID.String()
 			changed = true
 		}
+	}
+	// Backfill Groups slice from connection-referenced groups.
+	have := make(map[string]bool, len(cfg.Groups))
+	for _, g := range cfg.Groups {
+		have[g] = true
+	}
+	var missing []string
+	for _, c := range cfg.Connections {
+		if c.Group != "" && !have[c.Group] {
+			have[c.Group] = true
+			missing = append(missing, c.Group)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		cfg.Groups = append(cfg.Groups, missing...)
+		changed = true
 	}
 	return changed
 }
