@@ -436,19 +436,24 @@ func (m Model) handleEditGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cfg.Connections[i].Group = newName
 			}
 		}
+		// Capture whether newName already exists BEFORE mutating the slice.
+		oldIdx := groupIndex(m.cfg.Groups, oldName)
+		newNameExists := groupIndex(m.cfg.Groups, newName) >= 0
 		// Update Groups slice. If newName already exists, drop the old entry
 		// (connections merge into the existing group's position).
-		if oldIdx := groupIndex(m.cfg.Groups, oldName); oldIdx >= 0 {
-			if groupIndex(m.cfg.Groups, newName) < 0 {
+		if oldIdx >= 0 {
+			if !newNameExists {
 				m.cfg.Groups[oldIdx] = newName
 			} else {
 				m.cfg.Groups = append(m.cfg.Groups[:oldIdx], m.cfg.Groups[oldIdx+1:]...)
 			}
 		}
-		// Update collapsed state
+		// Update collapsed state. Only transfer to newName when newName had no prior state.
 		if wasCollapsed, ok := m.collapsed[oldName]; ok {
 			delete(m.collapsed, oldName)
-			m.collapsed[newName] = wasCollapsed
+			if !newNameExists {
+				m.collapsed[newName] = wasCollapsed
+			}
 		}
 		config.Save(m.configDir, m.cfg)
 		m.form = formNone
@@ -974,6 +979,11 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 		}
 		m.cfg.RemoveByID(m.formTarget)
 		m.cfg.Connections = append(m.cfg.Connections, conn)
+	}
+
+	// Auto-register the group if it is new (typed as free text in the form).
+	if conn.Group != "" && groupIndex(m.cfg.Groups, conn.Group) < 0 {
+		m.cfg.Groups = append(m.cfg.Groups, conn.Group)
 	}
 
 	// Save to disk
