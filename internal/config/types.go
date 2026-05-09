@@ -1,9 +1,12 @@
 package config
 
 import (
+	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
 )
 
 type Script struct {
@@ -50,10 +53,42 @@ type SSHSync struct {
 }
 
 type HangarConfig struct {
-	Connections   []Connection    `yaml:"connections"`
-	SSHSync       SSHSync         `yaml:"ssh_sync"`
-	GlobalScripts []Script        `yaml:"global_scripts,omitempty"`
-	Groups        map[string]bool `yaml:"groups,omitempty"`
+	Connections   []Connection `yaml:"connections"`
+	SSHSync       SSHSync      `yaml:"ssh_sync"`
+	GlobalScripts []Script     `yaml:"global_scripts,omitempty"`
+	Groups        GroupList    `yaml:"groups,omitempty"`
+}
+
+// GroupList is an ordered list of group names. It accepts both legacy
+// `map[string]bool` and the new `[]string` YAML forms during unmarshal.
+type GroupList []string
+
+// UnmarshalYAML accepts both the new sequence form (`[a, b, c]`) and the
+// legacy mapping form (`{a: true, b: true}`). Mapping form is sorted
+// alphabetically for deterministic ordering on first migration.
+func (g *GroupList) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.SequenceNode:
+		var s []string
+		if err := node.Decode(&s); err != nil {
+			return err
+		}
+		*g = s
+	case yaml.MappingNode:
+		var m map[string]bool
+		if err := node.Decode(&m); err != nil {
+			return err
+		}
+		names := make([]string, 0, len(m))
+		for k := range m {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		*g = names
+	default:
+		return fmt.Errorf("groups: unexpected YAML node kind %d", node.Kind)
+	}
+	return nil
 }
 
 type GlobalConfig struct {
