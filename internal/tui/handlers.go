@@ -395,22 +395,12 @@ func (m Model) handleAddGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formError = "group name is required"
 			return m, nil
 		}
-		// Check if group already exists
-		for _, c := range m.cfg.Connections {
-			if c.Group == name {
-				m.formError = "group already exists"
-				return m, nil
-			}
+		if groupIndex(m.cfg.Groups, name) >= 0 {
+			m.formError = "group already exists"
+			return m, nil
 		}
-		// Create a placeholder — groups exist via connections having the group name.
-		// Just expand it in collapsed map so it's visible.
 		m.collapsed[name] = false
-		// We need at least one connection to reference this group,
-		// but groups can also just be tracked. Store empty groups separately.
-		if m.cfg.Groups == nil {
-			m.cfg.Groups = make(map[string]bool)
-		}
-		m.cfg.Groups[name] = true
+		m.cfg.Groups = append(m.cfg.Groups, name)
 		config.Save(m.configDir, m.cfg)
 		m.form = formNone
 	case "backspace":
@@ -446,10 +436,14 @@ func (m Model) handleEditGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cfg.Connections[i].Group = newName
 			}
 		}
-		// Update Groups map
-		if m.cfg.Groups != nil {
-			delete(m.cfg.Groups, oldName)
-			m.cfg.Groups[newName] = true
+		// Update Groups slice. If newName already exists, drop the old entry
+		// (connections merge into the existing group's position).
+		if oldIdx := groupIndex(m.cfg.Groups, oldName); oldIdx >= 0 {
+			if groupIndex(m.cfg.Groups, newName) < 0 {
+				m.cfg.Groups[oldIdx] = newName
+			} else {
+				m.cfg.Groups = append(m.cfg.Groups[:oldIdx], m.cfg.Groups[oldIdx+1:]...)
+			}
 		}
 		// Update collapsed state
 		if wasCollapsed, ok := m.collapsed[oldName]; ok {
@@ -481,8 +475,8 @@ func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		delete(m.collapsed, m.formTargetGroup)
-		if m.cfg.Groups != nil {
-			delete(m.cfg.Groups, m.formTargetGroup)
+		if idx := groupIndex(m.cfg.Groups, m.formTargetGroup); idx >= 0 {
+			m.cfg.Groups = append(m.cfg.Groups[:idx], m.cfg.Groups[idx+1:]...)
 		}
 		config.Save(m.configDir, m.cfg)
 		items := m.sidebarItems()

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -69,44 +68,23 @@ func (m Model) filteredConnections() []config.Connection {
 }
 
 // sidebarItems builds a flat list of groups and connections for the sidebar.
-// Groups are sorted, ungrouped connections come first.
+// Ungrouped connections come first, then groups in cfg.Groups order.
 func (m Model) sidebarItems() []sidebarItem {
 	conns := m.filteredConnections()
 
-	// Collect groups in order of first appearance
-	var groupOrder []string
-	groupSeen := make(map[string]bool)
 	var ungrouped []config.Connection
-
 	for i := range conns {
-		c := &conns[i]
-		if c.Group == "" {
-			ungrouped = append(ungrouped, *c)
-		} else if !groupSeen[c.Group] {
-			groupOrder = append(groupOrder, c.Group)
-			groupSeen[c.Group] = true
+		if conns[i].Group == "" {
+			ungrouped = append(ungrouped, conns[i])
 		}
 	}
 
 	var items []sidebarItem
-
-	// Ungrouped connections first
 	for i := range ungrouped {
 		items = append(items, sidebarItem{conn: &ungrouped[i]})
 	}
 
-	// Also include empty groups from cfg.Groups
-	for g := range m.cfg.Groups {
-		if !groupSeen[g] {
-			groupOrder = append(groupOrder, g)
-			groupSeen[g] = true
-		}
-	}
-
-	sort.Strings(groupOrder)
-
-	// Grouped connections
-	for _, g := range groupOrder {
+	for _, g := range m.cfg.Groups {
 		items = append(items, sidebarItem{isGroup: true, group: g})
 		if !m.collapsed[g] {
 			for i := range conns {
@@ -483,6 +461,16 @@ func formatScriptDuration(d time.Duration) string {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
 	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+// groupIndex returns the position of name in groups, or -1 if absent.
+func groupIndex(groups []string, name string) int {
+	for i, g := range groups {
+		if g == name {
+			return i
+		}
+	}
+	return -1
 }
 
 // filteredSyncEntries returns indices of sync entries matching the filter text.
