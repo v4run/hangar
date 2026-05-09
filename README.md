@@ -124,7 +124,7 @@ Launch with `hangar` (no arguments).
 
 ## Groups
 
-Connections can be organized into collapsible groups. Groups are always sorted alphabetically. Collapsed groups show the connection count.
+Connections can be organized into collapsible groups. Use `J`/`K` on a group header to reorder groups manually; on a connection it swaps with the neighbor in the same group. Collapsed groups show the connection count.
 
 - Create a group with `g`, assign connections via the group field in the add/edit form
 - Move connections between groups with `x` (cut) and `y` (paste)
