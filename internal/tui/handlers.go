@@ -969,16 +969,21 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	} else if m.form == formEdit {
-		// Preserve existing fields from original connection
 		existing, findErr := m.cfg.FindByID(m.formTarget)
-		if findErr == nil {
-			conn.ID = existing.ID
-			conn.Scripts = existing.Scripts
-			conn.Notes = existing.Notes
-			conn.SyncedFromSSHConfig = existing.SyncedFromSSHConfig
+		if findErr != nil {
+			m.formError = findErr.Error()
+			return m, nil
 		}
-		m.cfg.RemoveByID(m.formTarget)
-		m.cfg.Connections = append(m.cfg.Connections, conn)
+		// Preserve fields not represented in the form.
+		conn.ID = existing.ID
+		conn.Scripts = existing.Scripts
+		conn.Notes = existing.Notes
+		conn.SyncedFromSSHConfig = existing.SyncedFromSSHConfig
+		// Update in place so the connection keeps its position in its group.
+		if err := m.cfg.UpdateByID(m.formTarget, conn); err != nil {
+			m.formError = err.Error()
+			return m, nil
+		}
 	}
 
 	// Auto-register the group if it is new (typed as free text in the form).

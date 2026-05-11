@@ -83,6 +83,18 @@ func (cfg *HangarConfig) RemoveByID(id uuid.UUID) error {
 	return fmt.Errorf("connection with ID %s not found", id)
 }
 
+// UpdateByID replaces the connection with the given ID in place, preserving its
+// position in the Connections slice. Returns an error if no such connection exists.
+func (cfg *HangarConfig) UpdateByID(id uuid.UUID, conn Connection) error {
+	for i := range cfg.Connections {
+		if cfg.Connections[i].ID == id {
+			cfg.Connections[i] = conn
+			return nil
+		}
+	}
+	return fmt.Errorf("connection with ID %s not found", id)
+}
+
 func (cfg *HangarConfig) FindByName(name string) (*Connection, error) {
 	for i := range cfg.Connections {
 		if cfg.Connections[i].Name == name {

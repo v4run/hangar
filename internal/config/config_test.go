@@ -405,3 +405,38 @@ func TestLegacyMapUpgradeOnLoad(t *testing.T) {
 		t.Fatalf("expected sequence form (no 'true' values), got map form:\n%s", rewritten)
 	}
 }
+
+func TestUpdateByIDPreservesPosition(t *testing.T) {
+	idA, idB, idC := uuid.New(), uuid.New(), uuid.New()
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{ID: idA, Name: "a", Host: "ha", Port: 22, User: "u", Group: "g"},
+			{ID: idB, Name: "b", Host: "hb", Port: 22, User: "u", Group: "g"},
+			{ID: idC, Name: "c", Host: "hc", Port: 22, User: "u", Group: "g"},
+		},
+	}
+	updated := Connection{ID: idB, Name: "b-renamed", Host: "hb2", Port: 2222, User: "u2", Group: "g"}
+	if err := cfg.UpdateByID(idB, updated); err != nil {
+		t.Fatalf("UpdateByID: %v", err)
+	}
+	if len(cfg.Connections) != 3 {
+		t.Fatalf("len: got %d, want 3", len(cfg.Connections))
+	}
+	if cfg.Connections[0].ID != idA || cfg.Connections[1].ID != idB || cfg.Connections[2].ID != idC {
+		t.Fatalf("order changed: [%s %s %s]", cfg.Connections[0].ID, cfg.Connections[1].ID, cfg.Connections[2].ID)
+	}
+	if cfg.Connections[1].Name != "b-renamed" || cfg.Connections[1].Host != "hb2" || cfg.Connections[1].Port != 2222 || cfg.Connections[1].User != "u2" {
+		t.Fatalf("connection not updated in place: %+v", cfg.Connections[1])
+	}
+}
+
+func TestUpdateByIDNotFound(t *testing.T) {
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{ID: uuid.New(), Name: "a", Host: "h", Port: 22, User: "u"},
+		},
+	}
+	if err := cfg.UpdateByID(uuid.New(), Connection{Name: "x"}); err == nil {
+		t.Fatal("expected error for unknown ID")
+	}
+}
