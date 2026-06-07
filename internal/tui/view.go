@@ -758,6 +758,8 @@ func (m Model) renderShellInitForm() string {
 	b.WriteString(dimStyle.Render("  Shell snippet (aliases, functions, exports) sourced before the interactive remote shell."))
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render("  Inheritance: global → group → connection (later overrides earlier)."))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("  Note: ~/.bashrc and /etc/motd are sourced automatically; 'Last login' line is not shown."))
 	b.WriteString("\n\n")
 	// Render content line-by-line with a cursor at the end.
 	for _, line := range strings.Split(m.shellInitInput, "\n") {
