@@ -478,6 +478,7 @@ func (m Model) renderForm() string {
 		b.WriteString(titleStyle.Render("New Connection"))
 	}
 	b.WriteString("\n\n")
+	b.WriteString(sectionDivider("basic", m.width-29) + "\n\n")
 
 	for i := 0; i < fieldCount; i++ {
 		value := m.formFields[i]
