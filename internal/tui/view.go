@@ -144,7 +144,7 @@ func (m Model) sidebarHints() string {
 	case item.isGroup:
 		add("space:fold", "e:rename", "d:del", "n:new", "g:group")
 		if wide {
-			add("i:init", "I:init$")
+			add("i/I:init")
 		}
 		add("J/K:reorder")
 		if hasClipboard {
@@ -154,7 +154,7 @@ func (m Model) sidebarHints() string {
 	default: // connection
 		add("enter:connect", "e:edit", "d:del")
 		if wide {
-			add("t:tag", "i:init", "I:init$", "l:scripts", "o:notes")
+			add("t:tag", "i/I:init", "l:scripts", "o:notes")
 		} else {
 			add("t:tag", "l:scripts")
 		}
