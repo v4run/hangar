@@ -53,7 +53,7 @@ func (m Model) renderHelp() string {
 		}},
 	}
 
-	width := m.width - 29 // main pane width
+	width := m.width - 31 // main pane content width (sidebar 26 + border 1 + paddingLeft 2 + margin 2)
 	if width < 40 {
 		width = 40
 	}

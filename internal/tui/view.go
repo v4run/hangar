@@ -478,7 +478,7 @@ func (m Model) renderForm() string {
 		b.WriteString(titleStyle.Render("New Connection"))
 	}
 	b.WriteString("\n\n")
-	b.WriteString(sectionDivider("basic", m.width-29) + "\n\n")
+	b.WriteString(sectionDivider("basic", m.width-31) + "\n\n")
 
 	for i := 0; i < fieldCount; i++ {
 		value := m.formFields[i]
@@ -522,7 +522,7 @@ func (m Model) renderForm() string {
 
 	// Advanced settings section
 	b.WriteString("\n")
-	b.WriteString(sectionDivider("advanced", m.width-29) + "\n\n")
+	b.WriteString(sectionDivider("advanced", m.width-31) + "\n\n")
 
 	advLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(10)
 	for i := fieldForwardAgent; i < fieldAdvancedCount; i++ {
@@ -632,7 +632,7 @@ func (m Model) renderGlobalSettings() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Global SSH Settings"))
 	b.WriteString("\n\n")
-	b.WriteString(sectionDivider("options", m.width-29) + "\n\n")
+	b.WriteString(sectionDivider("options", m.width-31) + "\n\n")
 
 	advLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(10)
 	for i := fieldForwardAgent; i < fieldAdvancedCount; i++ {
