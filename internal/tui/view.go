@@ -101,6 +101,8 @@ func (m Model) renderStatusBar() string {
 		hints = " tab:next  enter:save  esc:cancel"
 	case m.form == formEditNotes:
 		hints = " enter:save  esc:cancel"
+	case m.form == formEditShellInit:
+		hints = " enter:newline  ctrl+s:save  ctrl+e:$EDITOR  esc:cancel"
 	case m.focus == focusScripts:
 		if m.width >= 120 {
 			hints = " n:new  e:edit  d:del  enter:run  o:notes  h:back  ?:help  q:quit"
@@ -286,6 +288,8 @@ func (m Model) renderMainPane() string {
 		return m.renderGlobalSettings()
 	case formPasteConfirm:
 		return m.renderPasteConfirm()
+	case formEditShellInit:
+		return m.renderShellInitForm()
 	}
 
 	c := m.selectedConnection()
@@ -677,6 +681,41 @@ func (m Model) renderDeleteScriptConfirm() string {
 	b.WriteString("\n\n")
 	b.WriteString(normalStyle.Render("Remove ") + selectedStyle.Render(name) + normalStyle.Render("?"))
 	return b.String()
+}
+
+func (m Model) renderShellInitForm() string {
+	var title string
+	switch m.shellInitScope {
+	case shellInitScopeGlobal:
+		title = "Edit Shell Init — global"
+	case shellInitScopeGroup:
+		title = fmt.Sprintf("Edit Shell Init — group %q", m.shellInitGroup)
+	case shellInitScopeConnection:
+		name := "connection"
+		if c, err := m.cfg.FindByID(m.formTarget); err == nil {
+			name = c.Name
+		}
+		title = fmt.Sprintf("Edit Shell Init — %s", name)
+	}
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(title))
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("  Shell snippet (aliases, functions, exports) sourced before the interactive remote shell."))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("  Inheritance: global → group → connection (later overrides earlier)."))
+	b.WriteString("\n\n")
+	// Render content line-by-line with a cursor at the end.
+	for _, line := range strings.Split(m.shellInitInput, "\n") {
+		b.WriteString("  ")
+		b.WriteString(normalStyle.Render(line))
+		b.WriteString("\n")
+	}
+	// Remove the trailing newline added by the loop and place cursor inline.
+	out := b.String()
+	if strings.HasSuffix(out, "\n") {
+		out = out[:len(out)-1]
+	}
+	return out + cursorStyle.Render("_")
 }
 
 func (m Model) renderNotesForm() string {

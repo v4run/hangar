@@ -37,7 +37,8 @@ func newConnectCmd() *cobra.Command {
 				merged = conn.SSHOptions
 			}
 
-			return sshpkg.Connect(conn, jumpHost, merged)
+			shellInit := sshpkg.ComposeShellInit(cfg, conn)
+			return sshpkg.Connect(conn, jumpHost, merged, shellInit)
 		},
 	}
 

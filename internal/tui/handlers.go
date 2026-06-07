@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +13,44 @@ import (
 	"github.com/v4run/hangar/internal/config"
 	sshauth "github.com/v4run/hangar/internal/ssh"
 )
+
+type shellInitEditorDoneMsg struct {
+	content string
+	err     error
+}
+
+// openShellInitInEditor suspends the TUI and opens $EDITOR on a tempfile
+// seeded with the current shell-init buffer. On exit, the file is read and
+// delivered as a shellInitEditorDoneMsg.
+func (m *Model) openShellInitInEditor() tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = os.Getenv("VISUAL")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+	f, err := os.CreateTemp("", "hangar-shellinit-*.sh")
+	if err != nil {
+		return func() tea.Msg { return shellInitEditorDoneMsg{err: err} }
+	}
+	path := f.Name()
+	_, _ = f.WriteString(m.shellInitInput)
+	f.Close()
+
+	cmd := exec.Command(editor, path)
+	return tea.ExecProcess(cmd, func(execErr error) tea.Msg {
+		data, readErr := os.ReadFile(path)
+		os.Remove(path)
+		if execErr != nil {
+			return shellInitEditorDoneMsg{err: execErr}
+		}
+		if readErr != nil {
+			return shellInitEditorDoneMsg{err: readErr}
+		}
+		return shellInitEditorDoneMsg{content: string(data)}
+	})
+}
 
 func (m Model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -250,7 +290,7 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				opts = conn.SSHOptions
 			}
-			sshCmd, cleanup := sshauth.NewSSHCommand(conn, jumpHost, opts)
+			sshCmd, cleanup := sshauth.NewSSHCommand(conn, jumpHost, opts, "")
 			escapedCmd := strings.ReplaceAll(script.Command, "'", "'\\''")
 			remoteCmd := fmt.Sprintf("bash -l -c '%s; printf \"\\npress any key to continue...\"; read -n 1'", escapedCmd)
 			userHost := sshCmd.Args[len(sshCmd.Args)-1]
@@ -385,6 +425,60 @@ func (m Model) handleNotesInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleShellInitInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form = formNone
+		return m, nil
+	case "ctrl+s":
+		m.persistShellInit()
+		m.form = formNone
+		return m, nil
+	case "ctrl+e":
+		return m, m.openShellInitInEditor()
+	case "enter":
+		m.shellInitInput += "\n"
+		return m, nil
+	case "backspace":
+		if len(m.shellInitInput) > 0 {
+			m.shellInitInput = m.shellInitInput[:len(m.shellInitInput)-1]
+		}
+		return m, nil
+	case "tab":
+		m.shellInitInput += "\t"
+		return m, nil
+	}
+	s := msg.String()
+	if len(s) == 1 {
+		m.shellInitInput += s
+	} else if len(msg.Runes) > 0 {
+		m.shellInitInput += string(msg.Runes)
+	}
+	return m, nil
+}
+
+// persistShellInit writes m.shellInitInput to the scope's target and saves.
+func (m *Model) persistShellInit() {
+	switch m.shellInitScope {
+	case shellInitScopeGlobal:
+		m.cfg.GlobalShellInit = m.shellInitInput
+	case shellInitScopeGroup:
+		if m.cfg.GroupShellInit == nil {
+			m.cfg.GroupShellInit = make(map[string]string)
+		}
+		if strings.TrimSpace(m.shellInitInput) == "" {
+			delete(m.cfg.GroupShellInit, m.shellInitGroup)
+		} else {
+			m.cfg.GroupShellInit[m.shellInitGroup] = m.shellInitInput
+		}
+	case shellInitScopeConnection:
+		if c, err := m.cfg.FindByID(m.formTarget); err == nil {
+			c.ShellInit = m.shellInitInput
+		}
+	}
+	config.Save(m.configDir, m.cfg)
+}
+
 func (m Model) handleAddGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -455,6 +549,16 @@ func (m Model) handleEditGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.collapsed[newName] = wasCollapsed
 			}
 		}
+		// Migrate per-group shell-init snippet (only when newName had none).
+		if old, ok := m.cfg.GroupShellInit[oldName]; ok {
+			delete(m.cfg.GroupShellInit, oldName)
+			if !newNameExists {
+				if m.cfg.GroupShellInit == nil {
+					m.cfg.GroupShellInit = make(map[string]string)
+				}
+				m.cfg.GroupShellInit[newName] = old
+			}
+		}
 		config.Save(m.configDir, m.cfg)
 		m.form = formNone
 	case "backspace":
@@ -480,6 +584,7 @@ func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		delete(m.collapsed, m.formTargetGroup)
+		delete(m.cfg.GroupShellInit, m.formTargetGroup)
 		if idx := groupIndex(m.cfg.Groups, m.formTargetGroup); idx >= 0 {
 			m.cfg.Groups = append(m.cfg.Groups[:idx], m.cfg.Groups[idx+1:]...)
 		}
@@ -979,6 +1084,7 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 		conn.Scripts = existing.Scripts
 		conn.Notes = existing.Notes
 		conn.SyncedFromSSHConfig = existing.SyncedFromSSHConfig
+		conn.ShellInit = existing.ShellInit
 		// Update in place so the connection keeps its position in its group.
 		if err := m.cfg.UpdateByID(m.formTarget, conn); err != nil {
 			m.formError = err.Error()

@@ -29,8 +29,12 @@ func ResolveJumpHost(cfg *config.HangarConfig, jumpHostVal string) *config.Conne
 	return nil
 }
 
-func BuildSSHArgs(conn *config.Connection, jumpHost *config.Connection, opts *config.SSHOptions) []string {
+func BuildSSHArgs(conn *config.Connection, jumpHost *config.Connection, opts *config.SSHOptions, shellInit string) []string {
 	args := []string{"-p", strconv.Itoa(conn.Port)}
+	if shellInit != "" {
+		// Force a TTY so the interactive bash launched by the remote command works.
+		args = append(args, "-t")
+	}
 
 	if conn.IdentityFile != "" {
 		args = append(args, "-i", conn.IdentityFile)
@@ -81,6 +85,9 @@ func BuildSSHArgs(conn *config.Connection, jumpHost *config.Connection, opts *co
 	}
 
 	args = append(args, fmt.Sprintf("%s@%s", conn.User, conn.Host))
+	if shellInit != "" {
+		args = append(args, buildRemoteShellInitArg(shellInit))
+	}
 	return args
 }
 
@@ -94,8 +101,8 @@ func boolToYesNo(b bool) string {
 // NewSSHCommand creates an ssh exec.Cmd with askpass configured if a
 // password is stored in the keychain for this connection. Returns the
 // command and a cleanup function that must be called when done.
-func NewSSHCommand(conn *config.Connection, jumpHost *config.Connection, opts *config.SSHOptions) (*exec.Cmd, func()) {
-	args := BuildSSHArgs(conn, jumpHost, opts)
+func NewSSHCommand(conn *config.Connection, jumpHost *config.Connection, opts *config.SSHOptions, shellInit string) (*exec.Cmd, func()) {
+	args := BuildSSHArgs(conn, jumpHost, opts, shellInit)
 	cmd := exec.Command("ssh", args...)
 
 	// Set environment variables from SSHOptions
@@ -138,8 +145,8 @@ func NewSSHCommand(conn *config.Connection, jumpHost *config.Connection, opts *c
 	return cmd, func() { os.RemoveAll(tmpDir) }
 }
 
-func Connect(conn *config.Connection, jumpHost *config.Connection, opts *config.SSHOptions) error {
-	cmd, cleanup := NewSSHCommand(conn, jumpHost, opts)
+func Connect(conn *config.Connection, jumpHost *config.Connection, opts *config.SSHOptions, shellInit string) error {
+	cmd, cleanup := NewSSHCommand(conn, jumpHost, opts, shellInit)
 	defer cleanup()
 
 	cmd.Stdin = os.Stdin

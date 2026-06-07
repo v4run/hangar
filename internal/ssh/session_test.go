@@ -18,7 +18,7 @@ func TestBuildSSHArgs(t *testing.T) {
 		IdentityFile: "~/.ssh/id_ed25519",
 	}
 
-	args := BuildSSHArgs(conn, nil, nil)
+	args := BuildSSHArgs(conn, nil, nil, "")
 	expected := []string{"-p", "2222", "-i", "~/.ssh/id_ed25519", "deploy@10.0.0.1"}
 	if len(args) != len(expected) {
 		t.Fatalf("expected %v, got %v", expected, args)
@@ -46,7 +46,7 @@ func TestBuildSSHArgsWithJumpHost(t *testing.T) {
 		User: "admin",
 	}
 
-	args := BuildSSHArgs(conn, jump, nil)
+	args := BuildSSHArgs(conn, jump, nil, "")
 	found := false
 	for i, a := range args {
 		if a == "-J" && i+1 < len(args) {
@@ -70,7 +70,7 @@ func TestBuildSSHArgsDefaultPort(t *testing.T) {
 		User: "root",
 	}
 
-	args := BuildSSHArgs(conn, nil, nil)
+	args := BuildSSHArgs(conn, nil, nil, "")
 	expected := []string{"-p", "22", "root@10.0.0.1"}
 	if len(args) != len(expected) {
 		t.Fatalf("expected %v, got %v", expected, args)
@@ -99,7 +99,7 @@ func TestBuildSSHArgsWithSSHOptions(t *testing.T) {
 		ExtraOptions:        map[string]string{"TCPKeepAlive": "yes"},
 	}
 
-	args := BuildSSHArgs(conn, nil, opts)
+	args := BuildSSHArgs(conn, nil, opts, "")
 	argStr := fmt.Sprintf("%v", args)
 
 	checks := map[string]bool{
@@ -138,7 +138,7 @@ func TestBuildSSHArgsRawJumpHost(t *testing.T) {
 		JumpHost: "admin@bastion.example.com:22",
 	}
 
-	args := BuildSSHArgs(conn, nil, nil)
+	args := BuildSSHArgs(conn, nil, nil, "")
 	found := false
 	for i, a := range args {
 		if a == "-J" && i+1 < len(args) {

@@ -406,6 +406,36 @@ func TestLegacyMapUpgradeOnLoad(t *testing.T) {
 	}
 }
 
+func TestShellInitFieldsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	id := uuid.New()
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{ID: id, Name: "web", Host: "h", Port: 22, User: "u", Group: "prod",
+				ShellInit: "alias ll='ls -la'\nfoo() { echo hi; }\n"},
+		},
+		Groups:          GroupList{"prod"},
+		GlobalShellInit: "alias g=git\n",
+		GroupShellInit:  map[string]string{"prod": "alias deploy='echo prod'\n"},
+	}
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if loaded.GlobalShellInit != cfg.GlobalShellInit {
+		t.Fatalf("GlobalShellInit: got %q, want %q", loaded.GlobalShellInit, cfg.GlobalShellInit)
+	}
+	if loaded.GroupShellInit["prod"] != cfg.GroupShellInit["prod"] {
+		t.Fatalf("GroupShellInit[prod]: got %q, want %q", loaded.GroupShellInit["prod"], cfg.GroupShellInit["prod"])
+	}
+	if loaded.Connections[0].ShellInit != cfg.Connections[0].ShellInit {
+		t.Fatalf("Connection.ShellInit: got %q, want %q", loaded.Connections[0].ShellInit, cfg.Connections[0].ShellInit)
+	}
+}
+
 func TestUpdateByIDPreservesPosition(t *testing.T) {
 	idA, idB, idC := uuid.New(), uuid.New(), uuid.New()
 	cfg := &HangarConfig{

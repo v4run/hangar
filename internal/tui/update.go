@@ -24,6 +24,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearToastMsg:
 		m.activeToast = nil
 
+	case shellInitEditorDoneMsg:
+		if msg.err != nil {
+			t, cmd := showToast(fmt.Sprintf("editor: %s", msg.err), toastErr)
+			m.activeToast = &t
+			m.form = formNone
+			return m, cmd
+		}
+		m.shellInitInput = msg.content
+		if m.form == formEditShellInit {
+			m.persistShellInit()
+			m.form = formNone
+		}
+		return m, nil
+
 	case connectReadyMsg:
 		m.connecting = false
 		if m.connectTarget != nil {
@@ -36,7 +50,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				opts = c.SSHOptions
 			}
-			cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost, opts)
+			shellInit := sshauth.ComposeShellInit(m.cfg, c)
+			cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost, opts, shellInit)
 			return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 				cleanup()
 				return sshExitMsg{err: err}
@@ -178,6 +193,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.form == formPasteConfirm {
 			return m.handlePasteConfirmInput(msg)
+		}
+		if m.form == formEditShellInit {
+			return m.handleShellInitInput(msg)
 		}
 
 		// Visual mode
@@ -469,6 +487,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				copy(m.tagTokens, c.Tags)
 				m.tagBuffer = ""
 			}
+		case "i", "I":
+			items := m.sidebarItems()
+			if m.cursor >= len(items) {
+				break
+			}
+			item := items[m.cursor]
+			if item.isGroup {
+				m.shellInitScope = shellInitScopeGroup
+				m.shellInitGroup = item.group
+				m.shellInitInput = m.cfg.GroupShellInit[item.group]
+			} else if item.conn != nil {
+				m.shellInitScope = shellInitScopeConnection
+				m.formTarget = item.conn.ID
+				m.shellInitInput = item.conn.ShellInit
+			} else {
+				break
+			}
+			m.form = formEditShellInit
+			if msg.String() == "I" {
+				return m, m.openShellInitInEditor()
+			}
+		case "ctrl+g":
+			m.shellInitScope = shellInitScopeGlobal
+			m.shellInitInput = m.cfg.GlobalShellInit
+			m.form = formEditShellInit
 		case "enter":
 			c := m.selectedConnection()
 			if c != nil {

@@ -32,6 +32,13 @@ const (
 	formEditGroup
 	formGlobalSettings
 	formPasteConfirm
+	formEditShellInit
+)
+
+const (
+	shellInitScopeConnection = iota
+	shellInitScopeGroup
+	shellInitScopeGlobal
 )
 
 const (
@@ -151,6 +158,9 @@ type Model struct {
 	tagBuffer        string              // current typing buffer
 	runningScriptIdx int                 // index of script being run (-1 if none)
 	runningIsGlobal  bool                // whether the running script is global
+	shellInitInput   string              // text being edited in shell-init form
+	shellInitScope   int                 // shellInitScopeConnection/Group/Global
+	shellInitGroup   string              // group name when scope=group
 }
 
 type sshExitMsg struct{ err error }

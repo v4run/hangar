@@ -32,6 +32,9 @@ func (m Model) renderHelp() string {
 			{"o", "edit notes (in scripts pane)"},
 			{"g", "create new group"},
 			{"G", "global SSH settings"},
+			{"i", "edit shell-init for connection or group"},
+			{"I", "edit shell-init in $EDITOR"},
+			{"ctrl+g", "edit global shell-init"},
 		}},
 		{"clipboard", [][2]string{
 			{"x", "cut (mark for move)"},

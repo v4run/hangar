@@ -45,6 +45,7 @@ type Connection struct {
 	Notes               string      `yaml:"notes,omitempty"`
 	SSHOptions          *SSHOptions `yaml:"ssh_options,omitempty"`
 	UseGlobalSettings   *bool       `yaml:"use_global_settings,omitempty"`
+	ShellInit           string      `yaml:"shell_init,omitempty"`
 }
 
 type SSHSync struct {
@@ -55,8 +56,10 @@ type SSHSync struct {
 type HangarConfig struct {
 	Connections   []Connection `yaml:"connections"`
 	SSHSync       SSHSync      `yaml:"ssh_sync"`
-	GlobalScripts []Script     `yaml:"global_scripts,omitempty"`
-	Groups        GroupList    `yaml:"groups,omitempty"`
+	GlobalScripts   []Script          `yaml:"global_scripts,omitempty"`
+	Groups          GroupList         `yaml:"groups,omitempty"`
+	GlobalShellInit string            `yaml:"global_shell_init,omitempty"`
+	GroupShellInit  map[string]string `yaml:"group_shell_init,omitempty"`
 
 	// groupsFromLegacyMap is set by UnmarshalYAML when the on-disk groups
 	// field was written in the old map[string]bool form. Migrate() uses this
