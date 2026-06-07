@@ -135,7 +135,7 @@ Connections can be organized into collapsible groups. Use `J`/`K` on a group hea
 
 Define shell snippets (aliases, functions, env exports) that are sourced before the interactive remote shell on connect. Snippets layer in this order, with later definitions overriding earlier ones:
 
-- **Global** (`ctrl+g` in the sidebar) — applies to every connection
+- **Global** (`i` / `I` from the global settings screen, opened with `G`) — applies to every connection
 - **Per-group** (`i` on a group header) — applies to connections in that group
 - **Per-connection** (`i` on a connection row) — applies only to that connection
 

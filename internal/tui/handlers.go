@@ -930,6 +930,14 @@ func (m Model) handleGlobalSettingsNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	case "enter":
 		m.formEditing = true
 		m.formEditBuf = m.formFields[m.formCursor]
+	case "i", "I":
+		m.shellInitScope = shellInitScopeGlobal
+		m.shellInitInput = m.cfg.GlobalShellInit
+		m.form = formEditShellInit
+		if msg.String() == "I" {
+			return m, m.openShellInitInEditor()
+		}
+		return m, nil
 	case "ctrl+s":
 		opts, _ := parseSSHOptionsFromFields(m.formFields)
 		m.globalCfg.SSHOptions = opts

@@ -89,7 +89,7 @@ func (m Model) renderStatusBar() string {
 		if m.formEditing {
 			hints = " " + cursorStyle.Render("-- INSERT --") + "  h/l:toggle  enter:confirm  esc:discard  ctrl+s:save"
 		} else {
-			hints = " j/k:navigate  enter:edit  ctrl+s:save  esc:cancel"
+			hints = " j/k:navigate  enter:edit  i/I:shell-init  ctrl+s:save  esc:cancel"
 		}
 	case m.form == formTag:
 		hints = " enter:save  esc:cancel  (prefix with - to remove)"
@@ -140,7 +140,7 @@ func (m Model) sidebarHints() string {
 
 	switch {
 	case !hasItem:
-		add("n:new", "g:group", "G:settings", "ctrl+g:init", "s:sync", "/:find")
+		add("n:new", "g:group", "G:settings", "s:sync", "/:find")
 	case item.isGroup:
 		add("space:fold", "e:rename", "d:del", "n:new", "g:group")
 		if wide {

@@ -508,10 +508,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == "I" {
 				return m, m.openShellInitInEditor()
 			}
-		case "ctrl+g":
-			m.shellInitScope = shellInitScopeGlobal
-			m.shellInitInput = m.cfg.GlobalShellInit
-			m.form = formEditShellInit
 		case "enter":
 			c := m.selectedConnection()
 			if c != nil {
