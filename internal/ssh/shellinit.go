@@ -39,8 +39,14 @@ func ComposeShellInit(cfg *config.HangarConfig, conn *config.Connection) string 
 	// --rcfile sources FILE *instead of* ~/.bashrc, and we're not a login
 	// shell so ~/.bash_profile / ~/.profile aren't read either. Source
 	// ~/.bashrc first so hangar's layers add to rather than replace the
-	// user's existing env/PATH/aliases.
-	preamble := "# --- hangar: source user rc ---\n[ -f ~/.bashrc ] && . ~/.bashrc\n"
+	// user's existing env/PATH/aliases. Also print the motd files sshd
+	// would normally show on login — when ssh is given a remote command
+	// the session is classed as exec and the motd / last-login banner is
+	// suppressed.
+	preamble := "# --- hangar: source user rc ---\n" +
+		"[ -f ~/.bashrc ] && . ~/.bashrc\n" +
+		"[ -r /etc/motd ] && cat /etc/motd 2>/dev/null\n" +
+		"[ -r /run/motd.dynamic ] && cat /run/motd.dynamic 2>/dev/null\n"
 	return preamble + strings.Join(parts, "\n") + "\n"
 }
 
