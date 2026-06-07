@@ -112,15 +112,60 @@ func (m Model) renderStatusBar() string {
 			hints = " ?:help  q:quit"
 		}
 	default:
-		if m.width >= 120 {
-			hints = " n:new  e:edit  d:del  g:group  x:cut  y:copy  p:paste  G:settings  enter:connect  s:sync  t:tag  l:scripts  /:find  ?:help  q:quit"
-		} else if m.width >= 80 {
-			hints = " n:new  e:edit  d:del  enter:connect  /:find  ?:help  q:quit"
-		} else {
-			hints = " ?:help  q:quit"
-		}
+		hints = m.sidebarHints()
 	}
 	return statusBarStyle.Render(brand + hints)
+}
+
+// sidebarHints renders a context-aware status bar for the sidebar (normal
+// mode). The visible bindings depend on what's under the cursor — a group
+// header, a connection, or nothing — and on terminal width.
+func (m Model) sidebarHints() string {
+	if m.width < 80 {
+		return " ?:help  q:quit"
+	}
+
+	items := m.sidebarItems()
+	var item sidebarItem
+	hasItem := m.cursor < len(items)
+	if hasItem {
+		item = items[m.cursor]
+	}
+
+	hasClipboard := len(m.cutConnections) > 0 || len(m.copyConnections) > 0
+	wide := m.width >= 120
+
+	var parts []string
+	add := func(p ...string) { parts = append(parts, p...) }
+
+	switch {
+	case !hasItem:
+		add("n:new", "g:group", "G:settings", "ctrl+g:init", "s:sync", "/:find")
+	case item.isGroup:
+		add("space:fold", "e:rename", "d:del", "n:new", "g:group")
+		if wide {
+			add("i:init", "I:init$")
+		}
+		add("J/K:reorder")
+		if hasClipboard {
+			add("p:paste")
+		}
+		add("/:find")
+	default: // connection
+		add("enter:connect", "e:edit", "d:del")
+		if wide {
+			add("t:tag", "i:init", "I:init$", "l:scripts", "o:notes")
+		} else {
+			add("t:tag", "l:scripts")
+		}
+		add("x:cut", "y:copy")
+		if hasClipboard {
+			add("p:paste")
+		}
+		add("J/K:move", "/:find")
+	}
+	add("?:help", "q:quit")
+	return " " + strings.Join(parts, "  ")
 }
 
 func (m Model) renderSidebar() string {
