@@ -35,7 +35,13 @@ func ComposeShellInit(cfg *config.HangarConfig, conn *config.Connection) string 
 	if len(parts) == 0 {
 		return ""
 	}
-	return strings.Join(parts, "\n") + "\n"
+	// Preserve the remote user's normal interactive shell setup: bash with
+	// --rcfile sources FILE *instead of* ~/.bashrc, and we're not a login
+	// shell so ~/.bash_profile / ~/.profile aren't read either. Source
+	// ~/.bashrc first so hangar's layers add to rather than replace the
+	// user's existing env/PATH/aliases.
+	preamble := "# --- hangar: source user rc ---\n[ -f ~/.bashrc ] && . ~/.bashrc\n"
+	return preamble + strings.Join(parts, "\n") + "\n"
 }
 
 // buildRemoteShellInitArg returns the single remote-command argument that,
