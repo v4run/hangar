@@ -18,8 +18,10 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		// Reserve 1 col on each side and 1 row top/bottom for outer padding;
+		// the View wraps the final composition in matching padding.
+		m.width = msg.Width - 2
+		m.height = msg.Height - 2
 
 	case clearToastMsg:
 		m.activeToast = nil

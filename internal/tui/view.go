@@ -36,7 +36,8 @@ func (m Model) View() string {
 	// Status bar
 	statusBar := m.renderStatusBar()
 
-	return lipgloss.JoinVertical(lipgloss.Left, content, statusBar)
+	composed := lipgloss.JoinVertical(lipgloss.Left, content, statusBar)
+	return lipgloss.NewStyle().Padding(1, 1).Render(composed)
 }
 
 func (m Model) renderStatusBar() string {
