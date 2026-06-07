@@ -102,7 +102,11 @@ func (m Model) renderStatusBar() string {
 	case m.form == formEditNotes:
 		hints = " enter:save  esc:cancel"
 	case m.form == formEditShellInit:
-		hints = " enter:newline  ctrl+s:save  ctrl+e:$EDITOR  esc:cancel"
+		if m.shellInitScope == shellInitScopeConnection {
+			hints = " enter:newline  ctrl+s:save  ctrl+e:$EDITOR  ctrl+t:toggle-global  esc:cancel"
+		} else {
+			hints = " enter:newline  ctrl+s:save  ctrl+e:$EDITOR  esc:cancel"
+		}
 	case m.focus == focusScripts:
 		if m.width >= 120 {
 			hints = " n:new  e:edit  d:del  enter:run  o:notes  h:back  ?:help  q:quit"
@@ -737,10 +741,14 @@ func (m Model) renderShellInitForm() string {
 		title = fmt.Sprintf("Edit Shell Init — group %q", m.shellInitGroup)
 	case shellInitScopeConnection:
 		name := "connection"
+		inherit := "yes"
 		if c, err := m.cfg.FindByID(m.formTarget); err == nil {
 			name = c.Name
+			if c.UseGlobalShellInit != nil && !*c.UseGlobalShellInit {
+				inherit = "no"
+			}
 		}
-		title = fmt.Sprintf("Edit Shell Init — %s", name)
+		title = fmt.Sprintf("Edit Shell Init — %s   (inherit global: %s)", name, inherit)
 	}
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(title))

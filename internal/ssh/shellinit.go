@@ -17,7 +17,11 @@ import (
 // group overrides global.
 func ComposeShellInit(cfg *config.HangarConfig, conn *config.Connection) string {
 	var parts []string
-	if cfg != nil && strings.TrimSpace(cfg.GlobalShellInit) != "" {
+	useGlobal := true
+	if conn != nil && conn.UseGlobalShellInit != nil {
+		useGlobal = *conn.UseGlobalShellInit
+	}
+	if useGlobal && cfg != nil && strings.TrimSpace(cfg.GlobalShellInit) != "" {
 		parts = append(parts, "# --- hangar: global ---\n"+cfg.GlobalShellInit)
 	}
 	if cfg != nil && conn != nil && conn.Group != "" {

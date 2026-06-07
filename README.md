@@ -139,7 +139,7 @@ Define shell snippets (aliases, functions, env exports) that are sourced before 
 - **Per-group** (`i` on a group header) — applies to connections in that group
 - **Per-connection** (`i` on a connection row) — applies only to that connection
 
-Press `I` (capital) instead of `i` to open the snippet in `$EDITOR`; from the in-TUI editor `ctrl+e` does the same. Save with `ctrl+s`, cancel with `esc`. On connect, the composed snippet is base64-embedded into `ssh -t <host> 'bash --rcfile <(...) -i'`, so the remote host must have `bash` and `base64` on `PATH`. v1 always drops you into bash regardless of your remote login shell.
+Press `I` (capital) instead of `i` to open the snippet in `$EDITOR`; from the in-TUI editor `ctrl+e` does the same. Save with `ctrl+s`, cancel with `esc`. In the connection-scope editor, `ctrl+t` toggles whether that connection inherits the global snippet (group inheritance always applies). On connect, the composed snippet is base64-embedded into `ssh -t <host> 'bash --rcfile <(...) -i'`, so the remote host must have `bash` and `base64` on `PATH`. v1 always drops you into bash regardless of your remote login shell.
 
 ## Scripts
 

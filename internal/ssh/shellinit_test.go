@@ -37,6 +37,22 @@ func TestComposeShellInitLayering(t *testing.T) {
 	}
 }
 
+func TestComposeShellInitOptOutGlobal(t *testing.T) {
+	cfg := &config.HangarConfig{
+		GlobalShellInit: "alias g=git",
+		GroupShellInit:  map[string]string{"prod": "alias deploy='echo prod'"},
+	}
+	no := false
+	conn := &config.Connection{Name: "w", Group: "prod", ShellInit: "foo=1", UseGlobalShellInit: &no}
+	out := ComposeShellInit(cfg, conn)
+	if strings.Contains(out, "alias g=git") || strings.Contains(out, "global") {
+		t.Fatalf("expected global layer to be skipped, got:\n%s", out)
+	}
+	if !strings.Contains(out, "alias deploy='echo prod'") || !strings.Contains(out, "foo=1") {
+		t.Fatalf("expected group + connection layers, got:\n%s", out)
+	}
+}
+
 func TestComposeShellInitEmpty(t *testing.T) {
 	cfg := &config.HangarConfig{}
 	conn := &config.Connection{Name: "x"}

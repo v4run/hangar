@@ -436,6 +436,19 @@ func (m Model) handleShellInitInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+e":
 		return m, m.openShellInitInEditor()
+	case "ctrl+t":
+		if m.shellInitScope == shellInitScopeConnection {
+			if c, err := m.cfg.FindByID(m.formTarget); err == nil {
+				cur := true
+				if c.UseGlobalShellInit != nil {
+					cur = *c.UseGlobalShellInit
+				}
+				flipped := !cur
+				c.UseGlobalShellInit = &flipped
+				config.Save(m.configDir, m.cfg)
+			}
+		}
+		return m, nil
 	case "enter":
 		m.shellInitInput += "\n"
 		return m, nil
@@ -1093,6 +1106,7 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 		conn.Notes = existing.Notes
 		conn.SyncedFromSSHConfig = existing.SyncedFromSSHConfig
 		conn.ShellInit = existing.ShellInit
+		conn.UseGlobalShellInit = existing.UseGlobalShellInit
 		// Update in place so the connection keeps its position in its group.
 		if err := m.cfg.UpdateByID(m.formTarget, conn); err != nil {
 			m.formError = err.Error()

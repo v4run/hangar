@@ -46,6 +46,7 @@ type Connection struct {
 	SSHOptions          *SSHOptions `yaml:"ssh_options,omitempty"`
 	UseGlobalSettings   *bool       `yaml:"use_global_settings,omitempty"`
 	ShellInit           string      `yaml:"shell_init,omitempty"`
+	UseGlobalShellInit  *bool       `yaml:"use_global_shell_init,omitempty"`
 }
 
 type SSHSync struct {
