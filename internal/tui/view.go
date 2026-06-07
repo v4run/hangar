@@ -364,6 +364,12 @@ func (m Model) renderMainPane() string {
 			gb.WriteString(dimStyle.Render("e") + normalStyle.Render("      rename group"))
 			gb.WriteString("\n")
 			gb.WriteString(dimStyle.Render("d") + normalStyle.Render("      delete group"))
+			gb.WriteString("\n")
+			detailW := m.width - 31
+			if detailW < 40 {
+				detailW = 40
+			}
+			gb.WriteString(renderShellInitPreview(m, nil, groupName, detailW))
 			return gb.String()
 		}
 		if len(m.filteredConnections()) == 0 {
@@ -468,6 +474,60 @@ func (m Model) renderMainPane() string {
 		}
 	}
 
+	b.WriteString(renderShellInitPreview(m, c, c.Group, detailW))
+
+	return b.String()
+}
+
+// renderShellInitPreview renders a "shell init" section for the right pane,
+// showing the layered snippets that would apply at connect time for the
+// given context. If c is non-nil this is the connection-scope view (all
+// three layers); if c is nil the cursor is on a group header (global +
+// group layers). Returns "" if no layer contributes content.
+func renderShellInitPreview(m Model, c *config.Connection, groupName string, width int) string {
+	type layer struct {
+		title   string
+		content string
+	}
+	var layers []layer
+
+	includeGlobal := true
+	if c != nil && c.UseGlobalShellInit != nil {
+		includeGlobal = *c.UseGlobalShellInit
+	}
+	if includeGlobal && strings.TrimSpace(m.cfg.GlobalShellInit) != "" {
+		layers = append(layers, layer{"global", m.cfg.GlobalShellInit})
+	} else if !includeGlobal && c != nil && strings.TrimSpace(m.cfg.GlobalShellInit) != "" {
+		layers = append(layers, layer{"global (skipped)", ""})
+	}
+	if groupName != "" {
+		if g, ok := m.cfg.GroupShellInit[groupName]; ok && strings.TrimSpace(g) != "" {
+			layers = append(layers, layer{fmt.Sprintf("group %q", groupName), g})
+		}
+	}
+	if c != nil && strings.TrimSpace(c.ShellInit) != "" {
+		layers = append(layers, layer{"this connection", c.ShellInit})
+	}
+	if len(layers) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(sectionDivider("shell init", width))
+	b.WriteString("\n\n")
+	for i, l := range layers {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("  " + dimStyle.Render(l.title) + "\n")
+		if l.content == "" {
+			continue
+		}
+		for _, line := range strings.Split(strings.TrimRight(l.content, "\n"), "\n") {
+			b.WriteString("    " + normalStyle.Render(line) + "\n")
+		}
+	}
 	return b.String()
 }
 
