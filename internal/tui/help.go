@@ -25,8 +25,8 @@ func (m Model) renderHelp() string {
 			{"enter", "connect to selected host"},
 		}},
 		{"editing", [][2]string{
-			{"n", "new connection"},
-			{"e", "edit connection / group"},
+			{"n", "new connection or database (chooser)"},
+			{"e", "edit connection / database / group"},
 			{"d", "delete (with confirm)"},
 			{"t", "tag management"},
 			{"o", "edit notes (in scripts pane)"},
@@ -34,6 +34,11 @@ func (m Model) renderHelp() string {
 			{"G", "global SSH settings"},
 			{"i", "edit shell-init (connection / group; global from G screen)"},
 			{"I", "edit shell-init in $EDITOR"},
+		}},
+		{"databases", [][2]string{
+			{"enter", "open db client (tunnels via SSH if set)"},
+			{"badges", "[pg] postgres  [my] mysql  [rds] redis  [sq] sqlite"},
+			{"cli", "hangar db <name>"},
 		}},
 		{"clipboard", [][2]string{
 			{"x", "cut (mark for move)"},

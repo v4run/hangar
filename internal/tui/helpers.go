@@ -71,32 +71,74 @@ func (m Model) filteredConnections() []config.Connection {
 // Ungrouped connections come first, then groups in cfg.Groups order.
 func (m Model) sidebarItems() []sidebarItem {
 	conns := m.filteredConnections()
-
-	var ungrouped []config.Connection
-	for i := range conns {
-		if conns[i].Group == "" {
-			ungrouped = append(ungrouped, conns[i])
-		}
-	}
+	dbs := m.filteredDatabases()
 
 	var items []sidebarItem
-	for i := range ungrouped {
-		items = append(items, sidebarItem{conn: &ungrouped[i]})
+	// Ungrouped: connections first, then databases.
+	for i := range conns {
+		if conns[i].Group == "" {
+			items = append(items, sidebarItem{conn: &conns[i]})
+		}
+	}
+	for i := range dbs {
+		if dbs[i].Group == "" {
+			items = append(items, sidebarItem{db: &dbs[i]})
+		}
 	}
 
 	for _, g := range m.cfg.Groups {
 		items = append(items, sidebarItem{isGroup: true, group: g})
-		if !m.collapsed[g] {
-			for i := range conns {
-				if conns[i].Group == g {
-					c := conns[i]
-					items = append(items, sidebarItem{conn: &c})
-				}
+		if m.collapsed[g] {
+			continue
+		}
+		for i := range conns {
+			if conns[i].Group == g {
+				items = append(items, sidebarItem{conn: &conns[i]})
+			}
+		}
+		for i := range dbs {
+			if dbs[i].Group == g {
+				items = append(items, sidebarItem{db: &dbs[i]})
 			}
 		}
 	}
 
 	return items
+}
+
+func engineBadge(e config.DBEngine) string {
+	switch e {
+	case config.EnginePostgres:
+		return "pg"
+	case config.EngineMySQL:
+		return "my"
+	case config.EngineRedis:
+		return "rds"
+	case config.EngineSQLite:
+		return "sq"
+	}
+	return string(e)
+}
+
+func (m Model) filteredDatabases() []config.Database {
+	if m.filterText == "" {
+		return m.cfg.Databases
+	}
+	var out []config.Database
+	lower := strings.ToLower(m.filterText)
+	for _, d := range m.cfg.Databases {
+		if strings.Contains(strings.ToLower(d.Name), lower) {
+			out = append(out, d)
+			continue
+		}
+		for _, t := range d.Tags {
+			if strings.Contains(strings.ToLower(t), lower) {
+				out = append(out, d)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // selectedConnection returns the connection at the current cursor, or nil if cursor is on a group header.

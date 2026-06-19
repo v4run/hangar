@@ -131,6 +131,24 @@ Connections can be organized into collapsible groups. Use `J`/`K` on a group hea
 - Delete a group with `d` on the group header — connections are ungrouped, not deleted
 - New connections pre-fill the group from your current cursor position
 
+## Databases
+
+Hangar also bookmarks database profiles alongside SSH connections. Press `n`
+in the sidebar and pick `d` to add a database. Each profile stores:
+
+- engine — `postgres`, `mysql`, `redis`, or `sqlite`
+- host / port / user / db name (sqlite uses the `host` field as a file path)
+- optional **SSH tunnel** — the name of an existing Hangar SSH connection;
+  Hangar opens `ssh -N -L <freeport>:<dbhost>:<dbport>` and points the client
+  at `127.0.0.1:<freeport>`, tearing the tunnel down when the client exits
+- postgres-only **client** preference: `psql` (default) or `pgcli`
+- group / tags / notes / password (stored in the OS keychain by ID)
+
+Press `enter` on a database row to launch the client; from the shell run
+`hangar db <name>`. Sidebar badges identify the engine: `[pg]`, `[my]`,
+`[rds]`, `[sq]`. The relevant CLI must be on `PATH` (`psql`, `pgcli`,
+`mysql`, `redis-cli`, or `sqlite3`).
+
 ## Shell Init (aliases & functions)
 
 Define shell snippets (aliases, functions, env exports) that are sourced before the interactive remote shell on connect. Snippets layer in this order, with later definitions overriding earlier ones:

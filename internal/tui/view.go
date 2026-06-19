@@ -102,6 +102,16 @@ func (m Model) renderStatusBar() string {
 		hints = " tab:next  enter:save  esc:cancel"
 	case m.form == formEditNotes:
 		hints = " enter:save  esc:cancel"
+	case m.form == formNewChooser:
+		hints = " c:connection  d:database  esc:cancel"
+	case m.form == formAddDatabase || m.form == formEditDatabase:
+		if m.formEditing {
+			hints = " " + cursorStyle.Render("-- INSERT --") + "  h/l:toggle  enter:confirm  esc:discard  ctrl+s:save"
+		} else {
+			hints = " j/k:navigate  enter:edit  ctrl+s:save  esc:cancel"
+		}
+	case m.form == formDeleteDatabase:
+		hints = " y:confirm  esc:cancel"
 	case m.form == formEditShellInit:
 		if m.shellInitScope == shellInitScopeConnection {
 			hints = " enter:newline  ctrl+s:save  ctrl+e:$EDITOR  ctrl+t:toggle-global  esc:cancel"
@@ -156,18 +166,22 @@ func (m Model) sidebarHints() string {
 			add("p:paste")
 		}
 		add("/:find")
-	default: // connection
-		add("enter:connect", "e:edit", "d:del")
-		if wide {
-			add("t:tag", "i/I:init", "l:scripts", "o:notes")
+	default:
+		if item.db != nil {
+			add("enter:open", "e:edit", "d:del", "t:tag", "/:find")
 		} else {
-			add("t:tag", "l:scripts")
+			add("enter:connect", "e:edit", "d:del")
+			if wide {
+				add("t:tag", "i/I:init", "l:scripts", "o:notes")
+			} else {
+				add("t:tag", "l:scripts")
+			}
+			add("x:cut", "y:copy")
+			if hasClipboard {
+				add("p:paste")
+			}
+			add("J/K:move", "/:find")
 		}
-		add("x:cut", "y:copy")
-		if hasClipboard {
-			add("p:paste")
-		}
-		add("J/K:move", "/:find")
 	}
 	add("?:help", "q:quit")
 	return " " + strings.Join(parts, "  ")
@@ -220,10 +234,15 @@ func (m Model) renderSidebar() string {
 
 		if item.isGroup {
 			arrow := "▾"
-			// Count connections in this group
+			// Count connections + databases in this group
 			n := 0
 			for _, c := range conns {
 				if c.Group == item.group {
+					n++
+				}
+			}
+			for _, d := range m.cfg.Databases {
+				if d.Group == item.group {
 					n++
 				}
 			}
@@ -256,7 +275,7 @@ func (m Model) renderSidebar() string {
 			} else {
 				b.WriteString(" " + groupStyle.Render(arrow+" "+groupName) + pad + dimStyle.Render(countStr))
 			}
-		} else {
+		} else if item.conn != nil {
 			indent := "  "
 			if item.conn.Group != "" {
 				indent = "    "
@@ -289,6 +308,28 @@ func (m Model) renderSidebar() string {
 				b.WriteString(sidebarSelectedStyle.Render(row) + mark)
 			} else {
 				b.WriteString(indent + normalStyle.Render(displayName) + mark)
+			}
+		} else if item.db != nil {
+			indent := "  "
+			if item.db.Group != "" {
+				indent = "    "
+			}
+			badge := " " + dimStyle.Render("["+engineBadge(item.db.Engine)+"]")
+			badgeW := lipgloss.Width(badge)
+			availWidth := sidebarW - len(indent) - badgeW
+			displayName := item.db.Name
+			if len(displayName) > availWidth {
+				displayName = displayName[:availWidth-1] + "…"
+			}
+			if isCursor {
+				row := indent + displayName
+				rowW := lipgloss.Width(row)
+				if rowW+badgeW < sidebarW {
+					row += strings.Repeat(" ", sidebarW-rowW-badgeW)
+				}
+				b.WriteString(sidebarSelectedStyle.Render(row) + badge)
+			} else {
+				b.WriteString(indent + normalStyle.Render(displayName) + badge)
 			}
 		}
 		b.WriteString("\n")
@@ -340,17 +381,30 @@ func (m Model) renderMainPane() string {
 		return m.renderPasteConfirm()
 	case formEditShellInit:
 		return m.renderShellInitForm()
+	case formNewChooser:
+		return m.renderNewChooser()
+	case formAddDatabase, formEditDatabase:
+		return m.renderDBForm()
+	case formDeleteDatabase:
+		return m.renderDeleteDatabaseConfirm()
 	}
 
+	items := m.sidebarItems()
+	if m.cursor < len(items) && items[m.cursor].db != nil {
+		return m.renderDatabaseDetail(items[m.cursor].db)
+	}
 	c := m.selectedConnection()
 	if c == nil {
-		// Cursor might be on a group header
-		items := m.sidebarItems()
 		if m.cursor < len(items) && items[m.cursor].isGroup {
 			groupName := items[m.cursor].group
 			n := 0
 			for _, c := range m.cfg.Connections {
 				if c.Group == groupName {
+					n++
+				}
+			}
+			for _, d := range m.cfg.Databases {
+				if d.Group == groupName {
 					n++
 				}
 			}
@@ -791,6 +845,183 @@ func (m Model) renderDeleteScriptConfirm() string {
 	b.WriteString(titleStyle.Render("Delete Script"))
 	b.WriteString("\n\n")
 	b.WriteString(normalStyle.Render("Remove ") + selectedStyle.Render(name) + normalStyle.Render("?"))
+	return b.String()
+}
+
+func (m Model) renderDatabaseDetail(d *config.Database) string {
+	var b strings.Builder
+	detailW := m.width - 31
+	if detailW < 40 {
+		detailW = 40
+	}
+
+	b.WriteString(titleStyle.Render(d.Name))
+	b.WriteString("  " + dimStyle.Render("["+engineBadge(d.Engine)+"]"))
+	b.WriteString("\n")
+
+	// Connection line summary.
+	var summary string
+	switch d.Engine {
+	case config.EngineSQLite:
+		summary = "sqlite3 " + d.Host
+	default:
+		hostPort := fmt.Sprintf("%s:%d", d.Host, d.Port)
+		who := d.User
+		if d.DBName != "" {
+			summary = fmt.Sprintf("%s@%s/%s", who, hostPort, d.DBName)
+		} else if who != "" {
+			summary = fmt.Sprintf("%s@%s", who, hostPort)
+		} else {
+			summary = hostPort
+		}
+	}
+	b.WriteString(sshCmdStyle.Render(summary))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render(strings.Repeat("─", detailW)))
+	b.WriteString("\n")
+
+	if d.SSHTunnel != "" {
+		b.WriteString(labelStyle.Render("tunnel") + normalStyle.Render(m.jumpHostDisplay(d.SSHTunnel)))
+		b.WriteString("\n")
+	}
+	if d.Engine == config.EnginePostgres {
+		client := string(d.Client)
+		if client == "" {
+			client = "psql"
+		}
+		b.WriteString(labelStyle.Render("client") + normalStyle.Render(client))
+		b.WriteString("\n")
+	}
+	if pw, err := config.GetPassword(d.ID.String()); err == nil && pw != "" {
+		b.WriteString(labelStyle.Render("pass") + dimStyle.Render("********"))
+		b.WriteString("\n")
+	}
+	if len(d.Tags) > 0 {
+		b.WriteString(labelStyle.Render("tags"))
+		for i, t := range d.Tags {
+			if i > 0 {
+				b.WriteString(" ")
+			}
+			b.WriteString(tagStyle.Render("[" + t + "]"))
+		}
+		b.WriteString("\n")
+	}
+	if d.Notes != "" {
+		b.WriteString(labelStyle.Render("notes") + valueStyle.Render(d.Notes))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func (m Model) renderNewChooser() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("New"))
+	b.WriteString("\n\n")
+	b.WriteString("  " + cursorStyle.Render("c") + normalStyle.Render("   Connection — SSH bookmark"))
+	b.WriteString("\n")
+	b.WriteString("  " + cursorStyle.Render("d") + normalStyle.Render("   Database   — psql / mysql / redis / sqlite"))
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("  esc to cancel"))
+	return b.String()
+}
+
+func (m Model) renderDeleteDatabaseConfirm() string {
+	name := m.formTarget.String()
+	if d, err := m.cfg.FindDatabaseByID(m.formTarget); err == nil {
+		name = d.Name
+	}
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Delete Database"))
+	b.WriteString("\n\n")
+	b.WriteString(normalStyle.Render("Remove ") + selectedStyle.Render(name) + normalStyle.Render("?"))
+	return b.String()
+}
+
+func (m Model) renderDBForm() string {
+	var b strings.Builder
+	if m.form == formEditDatabase {
+		b.WriteString(titleStyle.Render("Edit Database"))
+	} else {
+		b.WriteString(titleStyle.Render("New Database"))
+	}
+	b.WriteString("\n\n")
+	b.WriteString(sectionDivider("profile", m.width-31) + "\n\n")
+
+	labelW := 8
+	lblStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(labelW)
+	for i := 0; i < dbFieldCount; i++ {
+		value := m.formFields[i]
+		if i == dbFieldPassword && value != "" {
+			value = strings.Repeat("*", len(value))
+		}
+		if i == dbFieldTunnel && !(m.formEditing && i == m.formCursor) {
+			value = m.jumpHostDisplay(value)
+		}
+		label := lblStyle.Render(strings.ToLower(dbFieldLabels[i]))
+		dimmed := false
+		// Dim postgres-only and tunnel fields when not relevant.
+		engine := config.DBEngine(m.formFields[dbFieldEngine])
+		if i == dbFieldClient && engine != config.EnginePostgres {
+			dimmed = true
+		}
+		if engine == config.EngineSQLite && (i == dbFieldPort || i == dbFieldUser || i == dbFieldDBName || i == dbFieldTunnel || i == dbFieldPassword) {
+			dimmed = true
+		}
+
+		if opts, ok := dbFieldCycleOptions[i]; ok {
+			if i == m.formCursor {
+				b.WriteString(activeFieldStyle.Render("> ") + label + " ")
+				b.WriteString(renderCycleOptions(opts, value))
+			} else {
+				disp := value
+				if disp == "" {
+					disp = "-"
+				}
+				style := normalStyle
+				if dimmed {
+					style = dimStyle
+				}
+				b.WriteString("  " + label + " " + style.Render(disp))
+			}
+		} else {
+			isActive := i == m.formCursor
+			if isActive && m.formEditing {
+				if value == "" {
+					ph := dbFieldPlaceholders[i]
+					b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
+				} else {
+					b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+				}
+			} else if isActive {
+				disp := value
+				if disp == "" {
+					disp = dbFieldPlaceholders[i]
+					b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(disp))
+				} else {
+					b.WriteString(activeFieldStyle.Render("> ") + label + " " + selectedStyle.Render(disp))
+				}
+			} else {
+				style := normalStyle
+				if dimmed {
+					style = dimStyle
+				}
+				if value == "" {
+					if ph := dbFieldPlaceholders[i]; ph != "" {
+						b.WriteString("  " + label + " " + dimStyle.Render(ph))
+					} else {
+						b.WriteString("  " + label + " " + dimStyle.Render("-"))
+					}
+				} else {
+					b.WriteString("  " + label + " " + style.Render(value))
+				}
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	if m.formError != "" {
+		b.WriteString("\n" + errorStyle.Render("  "+m.formError))
+	}
 	return b.String()
 }
 

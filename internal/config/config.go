@@ -104,6 +104,73 @@ func (cfg *HangarConfig) FindByName(name string) (*Connection, error) {
 	return nil, fmt.Errorf("connection %q not found", name)
 }
 
+func (cfg *HangarConfig) AddDatabase(db Database) error {
+	if db.Name == "" {
+		return fmt.Errorf("database name is required")
+	}
+	if db.Engine == "" {
+		return fmt.Errorf("engine is required for database %q", db.Name)
+	}
+	switch db.Engine {
+	case EngineSQLite:
+		if db.Host == "" {
+			return fmt.Errorf("path (host field) is required for sqlite database %q", db.Name)
+		}
+	case EnginePostgres, EngineMySQL, EngineRedis:
+		if db.Host == "" {
+			return fmt.Errorf("host is required for database %q", db.Name)
+		}
+		if db.Port <= 0 {
+			return fmt.Errorf("port must be positive for database %q", db.Name)
+		}
+	default:
+		return fmt.Errorf("unsupported engine %q for database %q", db.Engine, db.Name)
+	}
+	if db.ID == uuid.Nil {
+		db.ID = uuid.New()
+	}
+	cfg.Databases = append(cfg.Databases, db)
+	return nil
+}
+
+func (cfg *HangarConfig) RemoveDatabaseByID(id uuid.UUID) error {
+	for i, d := range cfg.Databases {
+		if d.ID == id {
+			cfg.Databases = append(cfg.Databases[:i], cfg.Databases[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("database with ID %s not found", id)
+}
+
+func (cfg *HangarConfig) UpdateDatabaseByID(id uuid.UUID, db Database) error {
+	for i := range cfg.Databases {
+		if cfg.Databases[i].ID == id {
+			cfg.Databases[i] = db
+			return nil
+		}
+	}
+	return fmt.Errorf("database with ID %s not found", id)
+}
+
+func (cfg *HangarConfig) FindDatabaseByID(id uuid.UUID) (*Database, error) {
+	for i := range cfg.Databases {
+		if cfg.Databases[i].ID == id {
+			return &cfg.Databases[i], nil
+		}
+	}
+	return nil, fmt.Errorf("database with ID %s not found", id)
+}
+
+func (cfg *HangarConfig) FindDatabaseByName(name string) (*Database, error) {
+	for i := range cfg.Databases {
+		if cfg.Databases[i].Name == name {
+			return &cfg.Databases[i], nil
+		}
+	}
+	return nil, fmt.Errorf("database %q not found", name)
+}
+
 func (cfg *HangarConfig) FindByID(id uuid.UUID) (*Connection, error) {
 	for i := range cfg.Connections {
 		if cfg.Connections[i].ID == id {
@@ -189,6 +256,25 @@ func (cfg *HangarConfig) Migrate() bool {
 			changed = true
 		}
 	}
+	for i := range cfg.Databases {
+		if cfg.Databases[i].ID == uuid.Nil {
+			cfg.Databases[i].ID = uuid.New()
+			changed = true
+		}
+	}
+	for i := range cfg.Databases {
+		t := cfg.Databases[i].SSHTunnel
+		if t == "" {
+			continue
+		}
+		if _, err := uuid.Parse(t); err == nil {
+			continue
+		}
+		if target, err := cfg.FindByName(t); err == nil {
+			cfg.Databases[i].SSHTunnel = target.ID.String()
+			changed = true
+		}
+	}
 	// Backfill Groups slice from connection-referenced groups.
 	have := make(map[string]bool, len(cfg.Groups)+len(cfg.Connections))
 	for _, g := range cfg.Groups {
@@ -199,6 +285,12 @@ func (cfg *HangarConfig) Migrate() bool {
 		if c.Group != "" && !have[c.Group] {
 			have[c.Group] = true
 			missing = append(missing, c.Group)
+		}
+	}
+	for _, d := range cfg.Databases {
+		if d.Group != "" && !have[d.Group] {
+			have[d.Group] = true
+			missing = append(missing, d.Group)
 		}
 	}
 	if len(missing) > 0 {

@@ -68,6 +68,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newSyncCmd())
 	root.AddCommand(newTagCmd())
 	root.AddCommand(newUntagCmd())
+	root.AddCommand(newDBCmd())
 
 	return root
 }

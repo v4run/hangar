@@ -49,6 +49,39 @@ type Connection struct {
 	UseGlobalShellInit  *bool       `yaml:"use_global_shell_init,omitempty"`
 }
 
+// DBEngine identifies a supported database engine.
+type DBEngine string
+
+const (
+	EnginePostgres DBEngine = "postgres"
+	EngineMySQL    DBEngine = "mysql"
+	EngineRedis    DBEngine = "redis"
+	EngineSQLite   DBEngine = "sqlite"
+)
+
+// PostgresClient picks the CLI used for Postgres profiles.
+type PostgresClient string
+
+const (
+	ClientPSQL  PostgresClient = "psql"
+	ClientPGCLI PostgresClient = "pgcli"
+)
+
+type Database struct {
+	ID        uuid.UUID      `yaml:"id"`
+	Name      string         `yaml:"name"`
+	Engine    DBEngine       `yaml:"engine"`
+	Host      string         `yaml:"host,omitempty"` // for sqlite, holds file path
+	Port      int            `yaml:"port,omitempty"`
+	User      string         `yaml:"user,omitempty"`
+	DBName    string         `yaml:"db,omitempty"`
+	SSHTunnel string         `yaml:"ssh_tunnel,omitempty"` // ID/name of a hangar SSH connection
+	Client    PostgresClient `yaml:"client,omitempty"`     // postgres only
+	Group     string         `yaml:"group,omitempty"`
+	Tags      []string       `yaml:"tags,omitempty"`
+	Notes     string         `yaml:"notes,omitempty"`
+}
+
 type SSHSync struct {
 	LastSync          time.Time `yaml:"last_sync,omitempty"`
 	LastSSHConfigHash string    `yaml:"last_ssh_config_hash,omitempty"`
@@ -59,6 +92,7 @@ type HangarConfig struct {
 	SSHSync       SSHSync      `yaml:"ssh_sync"`
 	GlobalScripts   []Script          `yaml:"global_scripts,omitempty"`
 	Groups          GroupList         `yaml:"groups,omitempty"`
+	Databases       []Database        `yaml:"databases,omitempty"`
 	GlobalShellInit string            `yaml:"global_shell_init,omitempty"`
 	GroupShellInit  map[string]string `yaml:"group_shell_init,omitempty"`
 

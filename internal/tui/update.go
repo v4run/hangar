@@ -26,6 +26,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearToastMsg:
 		m.activeToast = nil
 
+	case dbExitMsg:
+		text := fmt.Sprintf("closed %s", msg.name)
+		level := toastOK
+		if msg.err != nil {
+			text = fmt.Sprintf("%s exited: %s", msg.name, msg.err)
+			level = toastErr
+		}
+		t, cmd := showToast(text, level)
+		m.activeToast = &t
+		return m, cmd
+
 	case shellInitEditorDoneMsg:
 		if msg.err != nil {
 			t, cmd := showToast(fmt.Sprintf("editor: %s", msg.err), toastErr)
@@ -199,6 +210,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.form == formEditShellInit {
 			return m.handleShellInitInput(msg)
 		}
+		if m.form == formNewChooser {
+			return m.handleNewChooser(msg)
+		}
+		if m.form == formAddDatabase || m.form == formEditDatabase {
+			return m.handleDBFormInput(msg)
+		}
+		if m.form == formDeleteDatabase {
+			return m.handleDeleteDatabaseConfirm(msg)
+		}
 
 		// Visual mode
 		if m.visualMode {
@@ -295,22 +315,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncCursor = 0
 			m.form = formSync
 		case "n":
-			m.form = formAdd
-			// Pre-fill group from current selection if on a group header or grouped connection
-			currentGroup := ""
-			items := m.sidebarItems()
-			if m.cursor < len(items) {
-				if items[m.cursor].isGroup {
-					currentGroup = items[m.cursor].group
-				} else if items[m.cursor].conn != nil {
-					currentGroup = items[m.cursor].conn.Group
-				}
-			}
-			m.formFields = make([]string, fieldAdvancedCount)
-			m.formFields[fieldPort] = "22"
-			m.formFields[fieldGroup] = currentGroup
-			m.formFields[fieldUseGlobalSettings] = "yes"
-			m.formCursor = 0
+			m.form = formNewChooser
 			m.formError = ""
 		case "e":
 			items := m.sidebarItems()
@@ -319,6 +324,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.form = formEditGroup
 				m.formTargetGroup = items[m.cursor].group
 				m.groupNameInput = items[m.cursor].group
+				m.formError = ""
+			} else if m.cursor < len(items) && items[m.cursor].db != nil {
+				d := items[m.cursor].db
+				m.form = formEditDatabase
+				m.formTarget = d.ID
+				pw, _ := config.GetPassword(d.ID.String())
+				m.formFields = make([]string, dbFieldCount)
+				m.formFields[dbFieldEngine] = string(d.Engine)
+				m.formFields[dbFieldName] = d.Name
+				m.formFields[dbFieldHost] = d.Host
+				if d.Port > 0 {
+					m.formFields[dbFieldPort] = fmt.Sprintf("%d", d.Port)
+				}
+				m.formFields[dbFieldUser] = d.User
+				m.formFields[dbFieldDBName] = d.DBName
+				m.formFields[dbFieldTunnel] = d.SSHTunnel
+				m.formFields[dbFieldClient] = string(d.Client)
+				m.formFields[dbFieldGroup] = d.Group
+				m.formFields[dbFieldTags] = strings.Join(d.Tags, ", ")
+				m.formFields[dbFieldPassword] = pw
+				m.formFields[dbFieldNotes] = d.Notes
+				m.formCursor = 0
+				m.formEditing = false
 				m.formError = ""
 			} else {
 				c := m.selectedConnection()
@@ -347,9 +375,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			items := m.sidebarItems()
 			if m.cursor < len(items) && items[m.cursor].isGroup {
-				// Delete group
 				m.form = formDeleteGroup
 				m.formTargetGroup = items[m.cursor].group
+			} else if m.cursor < len(items) && items[m.cursor].db != nil {
+				m.form = formDeleteDatabase
+				m.formTarget = items[m.cursor].db.ID
 			} else {
 				c := m.selectedConnection()
 				if c != nil {
@@ -511,6 +541,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.openShellInitInEditor()
 			}
 		case "enter":
+			items := m.sidebarItems()
+			if m.cursor < len(items) && items[m.cursor].db != nil {
+				cmd, err := m.launchDatabase(items[m.cursor].db)
+				if err != nil {
+					t, c := showToast(err.Error(), toastErr)
+					m.activeToast = &t
+					return m, c
+				}
+				return m, cmd
+			}
 			c := m.selectedConnection()
 			if c != nil {
 				m.connecting = true

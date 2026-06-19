@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
+	dbpkg "github.com/v4run/hangar/internal/db"
 	sshauth "github.com/v4run/hangar/internal/ssh"
 )
 
@@ -227,6 +228,207 @@ func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleDBFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.formEditing {
+		return m.handleDBFormEditMode(msg)
+	}
+	return m.handleDBFormNavMode(msg)
+}
+
+func (m Model) handleDBFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form = formNone
+	case "j", "down", "tab":
+		m.formCursor = (m.formCursor + 1) % dbFieldCount
+	case "k", "up", "shift+tab":
+		m.formCursor = (m.formCursor - 1 + dbFieldCount) % dbFieldCount
+	case "enter":
+		m.formEditing = true
+		m.formEditBuf = m.formFields[m.formCursor]
+		if m.formCursor == dbFieldTunnel {
+			m.formFields[dbFieldTunnel] = m.jumpHostDisplay(m.formFields[dbFieldTunnel])
+		}
+	case "ctrl+s":
+		return m.saveDBForm()
+	}
+	return m, nil
+}
+
+func (m Model) handleDBFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.formFields[m.formCursor] = m.formEditBuf
+		m.formEditing = false
+	case "enter":
+		if m.formCursor == dbFieldTunnel {
+			m.formFields[dbFieldTunnel] = m.jumpHostResolve(m.formFields[dbFieldTunnel])
+		}
+		m.formEditing = false
+	case "ctrl+s":
+		if m.formCursor == dbFieldTunnel {
+			m.formFields[dbFieldTunnel] = m.jumpHostResolve(m.formFields[dbFieldTunnel])
+		}
+		m.formEditing = false
+		return m.saveDBForm()
+	case "l":
+		if opts, ok := dbFieldCycleOptions[m.formCursor]; ok {
+			cur := m.formFields[m.formCursor]
+			next := opts[0]
+			for i, o := range opts {
+				if o == cur && i+1 < len(opts) {
+					next = opts[i+1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = next
+			return m, nil
+		}
+		if m.formCursor < len(m.formFields) {
+			m.formFields[m.formCursor] += msg.String()
+		}
+	case "h":
+		if opts, ok := dbFieldCycleOptions[m.formCursor]; ok {
+			cur := m.formFields[m.formCursor]
+			prev := opts[len(opts)-1]
+			for i, o := range opts {
+				if o == cur && i > 0 {
+					prev = opts[i-1]
+					break
+				}
+			}
+			m.formFields[m.formCursor] = prev
+			return m, nil
+		}
+		if m.formCursor < len(m.formFields) {
+			m.formFields[m.formCursor] += msg.String()
+		}
+	case "backspace":
+		if _, ok := dbFieldCycleOptions[m.formCursor]; ok {
+			return m, nil
+		}
+		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
+			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
+		}
+	default:
+		if _, ok := dbFieldCycleOptions[m.formCursor]; ok {
+			return m, nil
+		}
+		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
+			m.formFields[m.formCursor] += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m Model) saveDBForm() (tea.Model, tea.Cmd) {
+	name := strings.TrimSpace(m.formFields[dbFieldName])
+	if name == "" {
+		m.formError = "name is required"
+		return m, nil
+	}
+	engine := config.DBEngine(strings.TrimSpace(m.formFields[dbFieldEngine]))
+	if engine == "" {
+		m.formError = "engine is required"
+		return m, nil
+	}
+	port := 0
+	if v := strings.TrimSpace(m.formFields[dbFieldPort]); v != "" {
+		p, err := strconv.Atoi(v)
+		if err != nil {
+			m.formError = "port must be a number"
+			return m, nil
+		}
+		port = p
+	}
+	var tags []string
+	if t := strings.TrimSpace(m.formFields[dbFieldTags]); t != "" {
+		for _, p := range strings.Split(t, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				tags = append(tags, p)
+			}
+		}
+	}
+	client := config.PostgresClient(strings.TrimSpace(m.formFields[dbFieldClient]))
+	if engine != config.EnginePostgres {
+		client = ""
+	}
+	db := config.Database{
+		Name:      name,
+		Engine:    engine,
+		Host:      strings.TrimSpace(m.formFields[dbFieldHost]),
+		Port:      port,
+		User:      strings.TrimSpace(m.formFields[dbFieldUser]),
+		DBName:    strings.TrimSpace(m.formFields[dbFieldDBName]),
+		SSHTunnel: strings.TrimSpace(m.formFields[dbFieldTunnel]),
+		Client:    client,
+		Group:     strings.TrimSpace(m.formFields[dbFieldGroup]),
+		Tags:      tags,
+		Notes:     strings.TrimSpace(m.formFields[dbFieldNotes]),
+	}
+
+	if m.form == formAddDatabase {
+		if err := m.cfg.AddDatabase(db); err != nil {
+			m.formError = err.Error()
+			return m, nil
+		}
+		db.ID = m.cfg.Databases[len(m.cfg.Databases)-1].ID
+	} else {
+		existing, err := m.cfg.FindDatabaseByID(m.formTarget)
+		if err != nil {
+			m.formError = err.Error()
+			return m, nil
+		}
+		db.ID = existing.ID
+		if err := m.cfg.UpdateDatabaseByID(m.formTarget, db); err != nil {
+			m.formError = err.Error()
+			return m, nil
+		}
+	}
+
+	if db.Group != "" && groupIndex(m.cfg.Groups, db.Group) < 0 {
+		m.cfg.Groups = append(m.cfg.Groups, db.Group)
+	}
+
+	if pw := m.formFields[dbFieldPassword]; pw != "" {
+		_ = config.SetPassword(db.ID.String(), pw)
+	} else {
+		_ = config.DeletePassword(db.ID.String())
+	}
+
+	if err := config.Save(m.configDir, m.cfg); err != nil {
+		m.formError = err.Error()
+		return m, nil
+	}
+	m.form = formNone
+	return m, nil
+}
+
+func (m Model) handleDeleteDatabaseConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		name := m.formTarget.String()
+		if d, err := m.cfg.FindDatabaseByID(m.formTarget); err == nil {
+			name = d.Name
+		}
+		_ = m.cfg.RemoveDatabaseByID(m.formTarget)
+		_ = config.DeletePassword(m.formTarget.String())
+		_ = config.Save(m.configDir, m.cfg)
+		items := m.sidebarItems()
+		if m.cursor >= len(items) && m.cursor > 0 {
+			m.cursor--
+		}
+		m.adjustSidebarViewport()
+		m.form = formNone
+		t, cmd := showToast("deleted database "+name, toastOK)
+		m.activeToast = &t
+		return m, cmd
+	case "n", "N", "esc":
+		m.form = formNone
+	}
+	return m, nil
+}
+
 func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	scripts := m.allScripts()
 
@@ -423,6 +625,124 @@ func (m Model) handleNotesInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) launchDatabase(d *config.Database) (tea.Cmd, error) {
+	var tunnelCmd *exec.Cmd
+	targetHost := d.Host
+	targetPort := d.Port
+
+	if d.SSHTunnel != "" && dbpkg.RequiresTunnelTarget(d.Engine) {
+		var sshConn *config.Connection
+		if id, err := uuid.Parse(d.SSHTunnel); err == nil {
+			sshConn, _ = m.cfg.FindByID(id)
+		}
+		if sshConn == nil {
+			sshConn, _ = m.cfg.FindByName(d.SSHTunnel)
+		}
+		if sshConn == nil {
+			return nil, fmt.Errorf("ssh tunnel %q not found", d.SSHTunnel)
+		}
+		port, err := sshauth.FreeLocalPort()
+		if err != nil {
+			return nil, err
+		}
+		jump := sshauth.ResolveJumpHost(m.cfg, sshConn.JumpHost)
+		var opts *config.SSHOptions
+		if sshConn.UseGlobalSettings == nil || *sshConn.UseGlobalSettings {
+			mo := config.MergeSSHOptions(m.globalCfg.SSHOptions, sshConn.SSHOptions)
+			opts = &mo
+		} else {
+			opts = sshConn.SSHOptions
+		}
+		tunnelCmd, _ = sshauth.BuildTunnelCommand(sshConn, jump, opts, port, d.Host, d.Port)
+		if err := tunnelCmd.Start(); err != nil {
+			return nil, fmt.Errorf("opening tunnel: %w", err)
+		}
+		if err := sshauth.WaitForLocalPort(port, 6*time.Second); err != nil {
+			_ = tunnelCmd.Process.Kill()
+			return nil, err
+		}
+		targetHost = "127.0.0.1"
+		targetPort = port
+	}
+
+	pw, _ := config.GetPassword(d.ID.String())
+	clientCmd, err := dbpkg.Build(d, targetHost, targetPort, pw)
+	if err != nil {
+		if tunnelCmd != nil {
+			_ = tunnelCmd.Process.Kill()
+		}
+		return nil, err
+	}
+	c := exec.Command(clientCmd.Path, clientCmd.Args[1:]...)
+	if len(clientCmd.Env) > 0 {
+		c.Env = append(os.Environ(), clientCmd.Env...)
+	}
+	name := d.Name
+	return tea.ExecProcess(c, func(execErr error) tea.Msg {
+		if tunnelCmd != nil {
+			_ = tunnelCmd.Process.Kill()
+			_ = tunnelCmd.Wait()
+		}
+		return dbExitMsg{err: execErr, name: name}
+	}), nil
+}
+
+func (m Model) handleNewChooser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form = formNone
+	case "c", "C":
+		m.beginAddConnection()
+	case "d", "D":
+		m.beginAddDatabase()
+	}
+	return m, nil
+}
+
+func (m *Model) beginAddConnection() {
+	m.form = formAdd
+	currentGroup := ""
+	items := m.sidebarItems()
+	if m.cursor < len(items) {
+		if items[m.cursor].isGroup {
+			currentGroup = items[m.cursor].group
+		} else if items[m.cursor].conn != nil {
+			currentGroup = items[m.cursor].conn.Group
+		} else if items[m.cursor].db != nil {
+			currentGroup = items[m.cursor].db.Group
+		}
+	}
+	m.formFields = make([]string, fieldAdvancedCount)
+	m.formFields[fieldPort] = "22"
+	m.formFields[fieldGroup] = currentGroup
+	m.formFields[fieldUseGlobalSettings] = "yes"
+	m.formCursor = 0
+	m.formError = ""
+}
+
+func (m *Model) beginAddDatabase() {
+	m.form = formAddDatabase
+	currentGroup := ""
+	items := m.sidebarItems()
+	if m.cursor < len(items) {
+		if items[m.cursor].isGroup {
+			currentGroup = items[m.cursor].group
+		} else if items[m.cursor].conn != nil {
+			currentGroup = items[m.cursor].conn.Group
+		} else if items[m.cursor].db != nil {
+			currentGroup = items[m.cursor].db.Group
+		}
+	}
+	m.formFields = make([]string, dbFieldCount)
+	m.formFields[dbFieldEngine] = "postgres"
+	m.formFields[dbFieldPort] = "5432"
+	m.formFields[dbFieldClient] = "psql"
+	m.formFields[dbFieldGroup] = currentGroup
+	m.formCursor = 0
+	m.formEditing = false
+	m.formError = ""
 }
 
 func (m Model) handleShellInitInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

@@ -33,6 +33,10 @@ const (
 	formGlobalSettings
 	formPasteConfirm
 	formEditShellInit
+	formNewChooser
+	formAddDatabase
+	formEditDatabase
+	formDeleteDatabase
 )
 
 const (
@@ -97,11 +101,46 @@ var fieldPlaceholders = map[int]string{
 	fieldExtraOptions:        "TCPKeepAlive=yes, LogLevel=INFO",
 }
 
-// sidebarItem represents a row in the sidebar — either a group header or a connection.
+// Database form field indices and labels.
+const (
+	dbFieldEngine = iota
+	dbFieldName
+	dbFieldHost
+	dbFieldPort
+	dbFieldUser
+	dbFieldDBName
+	dbFieldTunnel
+	dbFieldClient
+	dbFieldGroup
+	dbFieldTags
+	dbFieldPassword
+	dbFieldNotes
+	dbFieldCount
+)
+
+var dbFieldLabels = []string{
+	"Engine", "Name", "Host", "Port", "User", "DB",
+	"Tunnel", "Client", "Group", "Tags", "Pass", "Notes",
+}
+
+var dbFieldCycleOptions = map[int][]string{
+	dbFieldEngine: {"postgres", "mysql", "redis", "sqlite"},
+	dbFieldClient: {"psql", "pgcli"},
+}
+
+var dbFieldPlaceholders = map[int]string{
+	dbFieldHost:   "db.example.com or /path/to/file.db",
+	dbFieldPort:   "5432",
+	dbFieldTunnel: "(optional) name of an SSH connection",
+}
+
+// sidebarItem represents a row in the sidebar — a group header, a connection,
+// or a database. Exactly one of isGroup / conn / db is meaningful.
 type sidebarItem struct {
 	isGroup bool
 	group   string             // group name (for headers)
 	conn    *config.Connection // connection (for connection rows)
+	db      *config.Database   // database (for database rows)
 }
 
 type Model struct {
@@ -164,6 +203,11 @@ type Model struct {
 }
 
 type sshExitMsg struct{ err error }
+
+type dbExitMsg struct {
+	err  error
+	name string
+}
 
 type connectReadyMsg struct{}
 

@@ -460,6 +460,108 @@ func TestUpdateByIDPreservesPosition(t *testing.T) {
 	}
 }
 
+func TestDatabaseRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	bastion := uuid.New()
+	dbID := uuid.New()
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{ID: bastion, Name: "bastion", Host: "10.0.0.1", Port: 22, User: "u"},
+		},
+		Databases: []Database{
+			{
+				ID:        dbID,
+				Name:      "primary",
+				Engine:    EnginePostgres,
+				Host:      "db.internal",
+				Port:      5432,
+				User:      "appuser",
+				DBName:    "app",
+				SSHTunnel: bastion.String(),
+				Client:    ClientPGCLI,
+				Group:     "prod",
+				Tags:      []string{"primary", "rw"},
+				Notes:     "main read/write",
+			},
+		},
+	}
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(loaded.Databases) != 1 {
+		t.Fatalf("len: got %d", len(loaded.Databases))
+	}
+	d := loaded.Databases[0]
+	if d.ID != dbID || d.Name != "primary" || d.Engine != EnginePostgres ||
+		d.Host != "db.internal" || d.Port != 5432 || d.User != "appuser" ||
+		d.DBName != "app" || d.SSHTunnel != bastion.String() ||
+		d.Client != ClientPGCLI || d.Group != "prod" || d.Notes != "main read/write" {
+		t.Fatalf("mismatch: %+v", d)
+	}
+	if len(d.Tags) != 2 || d.Tags[0] != "primary" || d.Tags[1] != "rw" {
+		t.Fatalf("tags: %v", d.Tags)
+	}
+}
+
+func TestAddDatabaseValidation(t *testing.T) {
+	cfg := &HangarConfig{}
+	if err := cfg.AddDatabase(Database{}); err == nil {
+		t.Fatal("expected error for empty name")
+	}
+	if err := cfg.AddDatabase(Database{Name: "x"}); err == nil {
+		t.Fatal("expected error for missing engine")
+	}
+	if err := cfg.AddDatabase(Database{Name: "x", Engine: "bogus"}); err == nil {
+		t.Fatal("expected error for unsupported engine")
+	}
+	if err := cfg.AddDatabase(Database{Name: "x", Engine: EnginePostgres, Port: 5432}); err == nil {
+		t.Fatal("expected error for missing host")
+	}
+	if err := cfg.AddDatabase(Database{Name: "x", Engine: EnginePostgres, Host: "h"}); err == nil {
+		t.Fatal("expected error for missing port")
+	}
+	if err := cfg.AddDatabase(Database{Name: "lite", Engine: EngineSQLite}); err == nil {
+		t.Fatal("expected error for sqlite missing path")
+	}
+	if err := cfg.AddDatabase(Database{Name: "lite", Engine: EngineSQLite, Host: "/tmp/x.db"}); err != nil {
+		t.Fatalf("sqlite with path should succeed: %v", err)
+	}
+}
+
+func TestMigrateBackfillsGroupFromDatabase(t *testing.T) {
+	cfg := &HangarConfig{
+		Databases: []Database{
+			{ID: uuid.New(), Name: "d", Engine: EnginePostgres, Host: "h", Port: 5432, Group: "warehouse"},
+		},
+	}
+	if !cfg.Migrate() {
+		t.Fatal("expected Migrate to report changes")
+	}
+	if len(cfg.Groups) != 1 || cfg.Groups[0] != "warehouse" {
+		t.Fatalf("Groups: got %v, want [warehouse]", cfg.Groups)
+	}
+}
+
+func TestMigrateResolvesDatabaseTunnelName(t *testing.T) {
+	bastionID := uuid.New()
+	cfg := &HangarConfig{
+		Connections: []Connection{
+			{ID: bastionID, Name: "bastion", Host: "10.0.0.1", Port: 22, User: "u"},
+		},
+		Databases: []Database{
+			{ID: uuid.New(), Name: "d", Engine: EnginePostgres, Host: "h", Port: 5432, SSHTunnel: "bastion"},
+		},
+	}
+	cfg.Migrate()
+	if cfg.Databases[0].SSHTunnel != bastionID.String() {
+		t.Fatalf("tunnel: got %s, want %s", cfg.Databases[0].SSHTunnel, bastionID)
+	}
+}
+
 func TestUpdateByIDNotFound(t *testing.T) {
 	cfg := &HangarConfig{
 		Connections: []Connection{
