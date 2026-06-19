@@ -30,6 +30,10 @@ func newDBCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			d, err = config.ResolveDatabase(d)
+			if err != nil {
+				return fmt.Errorf("resolving database: %w", err)
+			}
 
 			targetHost, targetPort := d.Host, d.Port
 			var tunnelCmd *exec.Cmd
@@ -65,7 +69,10 @@ func newDBCmd() *cobra.Command {
 				targetPort = port
 			}
 
-			pw, _ := config.GetPassword(d.ID.String())
+			pw := d.Password
+			if pw == "" {
+				pw, _ = config.GetPassword(d.ID.String())
+			}
 			cc, err := dbpkg.Build(d, targetHost, targetPort, pw)
 			if err != nil {
 				return err

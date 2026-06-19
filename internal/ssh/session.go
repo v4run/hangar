@@ -113,12 +113,22 @@ func NewSSHCommand(conn *config.Connection, jumpHost *config.Connection, opts *c
 		}
 	}
 
-	password, err := config.GetPassword(conn.ID.String())
-	if err != nil || password == "" {
-		// Fallback: try legacy name-based lookup
-		password, err = config.GetPassword(conn.Name)
+	// Resolution order: $(...) command on the Connection.Password field,
+	// then keychain by ID, then legacy keychain by name.
+	password := ""
+	if conn.Password != "" {
+		if v, err := config.ResolveValue(conn.Password); err == nil {
+			password = v
+		}
+	}
+	if password == "" {
+		var err error
+		password, err = config.GetPassword(conn.ID.String())
 		if err != nil || password == "" {
-			return cmd, func() {}
+			password, err = config.GetPassword(conn.Name)
+			if err != nil || password == "" {
+				return cmd, func() {}
+			}
 		}
 	}
 

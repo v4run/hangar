@@ -47,6 +47,12 @@ type Connection struct {
 	UseGlobalSettings   *bool       `yaml:"use_global_settings,omitempty"`
 	ShellInit           string      `yaml:"shell_init,omitempty"`
 	UseGlobalShellInit  *bool       `yaml:"use_global_shell_init,omitempty"`
+
+	// Password holds a $(...) command-substitution form (e.g. an op/vault
+	// fetch) used to resolve the password at connect time. Literal
+	// passwords still live in the OS keychain — this field is empty for
+	// keychain-backed entries.
+	Password string `yaml:"password,omitempty"`
 }
 
 // DBEngine identifies a supported database engine.
@@ -80,6 +86,9 @@ type Database struct {
 	Group     string         `yaml:"group,omitempty"`
 	Tags      []string       `yaml:"tags,omitempty"`
 	Notes     string         `yaml:"notes,omitempty"`
+
+	// Password: see Connection.Password.
+	Password string `yaml:"password,omitempty"`
 }
 
 type SSHSync struct {

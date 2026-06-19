@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/v4run/hangar/internal/config"
 	sshpkg "github.com/v4run/hangar/internal/ssh"
@@ -23,6 +25,10 @@ func newConnectCmd() *cobra.Command {
 			conn, err := cfg.FindByName(args[0])
 			if err != nil {
 				return err
+			}
+			conn, err = config.ResolveConnection(conn)
+			if err != nil {
+				return fmt.Errorf("resolving connection: %w", err)
 			}
 
 			jumpHost := sshpkg.ResolveJumpHost(cfg, conn.JumpHost)

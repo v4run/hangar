@@ -149,6 +149,28 @@ Press `enter` on a database row to launch the client; from the shell run
 `[rds]`, `[sq]`. The relevant CLI must be on `PATH` (`psql`, `pgcli`,
 `mysql`, `redis-cli`, or `sqlite3`).
 
+## Dynamic field values
+
+Any of the four connection fields **host**, **user**, **identity_file**,
+and **password** (and the database analogues **host**, **user**, **db**,
+**password**) can be set to a `$(...)` command-substitution form instead
+of a literal. Hangar runs the inner command via `sh -c` at connect time,
+using its stdout (newlines trimmed) as the field value. Useful for:
+
+- **Passwords from a secret manager:**
+  `$(op read "op://vault/prod-db/password")`,
+  `$(vault kv get -field=password secret/prod-db)`,
+  `$(bw get password prod-db)`
+- **Dynamic host discovery:** `$(aws ec2 describe-instances --query ... --output text)`
+- **Identity files managed by another tool:** `$(my-key-locator prod)`
+
+Commands have a 10-second timeout. If any field fails to resolve, the
+connect is aborted with a toast showing the command and its stderr.
+
+Type the `$(...)` value directly into the form's field — Hangar detects
+the wrapping and stores it as a command in `connections.yaml` rather
+than in the keychain (so literal passwords still get the keychain).
+
 ## Shell Init (aliases & functions)
 
 Define shell snippets (aliases, functions, env exports) that are sourced before the interactive remote shell on connect. Snippets layer in this order, with later definitions overriding earlier ones:

@@ -353,6 +353,12 @@ func (m Model) saveDBForm() (tea.Model, tea.Cmd) {
 	if engine != config.EnginePostgres {
 		client = ""
 	}
+	pwIn := m.formFields[dbFieldPassword]
+	dbPasswordCmd := ""
+	if config.IsCommandValue(pwIn) {
+		dbPasswordCmd = pwIn
+	}
+
 	db := config.Database{
 		Name:      name,
 		Engine:    engine,
@@ -365,6 +371,7 @@ func (m Model) saveDBForm() (tea.Model, tea.Cmd) {
 		Group:     strings.TrimSpace(m.formFields[dbFieldGroup]),
 		Tags:      tags,
 		Notes:     strings.TrimSpace(m.formFields[dbFieldNotes]),
+		Password:  dbPasswordCmd,
 	}
 
 	if m.form == formAddDatabase {
@@ -390,7 +397,7 @@ func (m Model) saveDBForm() (tea.Model, tea.Cmd) {
 		m.cfg.Groups = append(m.cfg.Groups, db.Group)
 	}
 
-	if pw := m.formFields[dbFieldPassword]; pw != "" {
+	if pw := m.formFields[dbFieldPassword]; pw != "" && !config.IsCommandValue(pw) {
 		_ = config.SetPassword(db.ID.String(), pw)
 	} else {
 		_ = config.DeletePassword(db.ID.String())
@@ -628,6 +635,11 @@ func (m Model) handleNotesInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) launchDatabase(d *config.Database) (tea.Cmd, error) {
+	resolved, err := config.ResolveDatabase(d)
+	if err != nil {
+		return nil, err
+	}
+	d = resolved
 	var tunnelCmd *exec.Cmd
 	targetHost := d.Host
 	targetPort := d.Port
@@ -667,7 +679,10 @@ func (m Model) launchDatabase(d *config.Database) (tea.Cmd, error) {
 		targetPort = port
 	}
 
-	pw, _ := config.GetPassword(d.ID.String())
+	pw := d.Password
+	if pw == "" {
+		pw, _ = config.GetPassword(d.ID.String())
+	}
 	clientCmd, err := dbpkg.Build(d, targetHost, targetPort, pw)
 	if err != nil {
 		if tunnelCmd != nil {
@@ -1396,6 +1411,14 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 	// Parse SSH options from advanced fields
 	sshOpts, useGlobal := parseSSHOptionsFromFields(m.formFields)
 
+	// If the password input is a $(...) command, store it on the connection
+	// (resolved at connect time) and clear the keychain. Literal passwords
+	// continue to go to the keychain as before.
+	passwordCmd := ""
+	if config.IsCommandValue(password) {
+		passwordCmd = password
+	}
+
 	conn := config.Connection{
 		Name:              name,
 		Host:              host,
@@ -1407,6 +1430,7 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 		Tags:              tags,
 		SSHOptions:        sshOpts,
 		UseGlobalSettings: useGlobal,
+		Password:          passwordCmd,
 	}
 
 	if m.form == formAdd {
@@ -1445,9 +1469,10 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Save or delete password in keychain
+	// Save or delete password in keychain. $(...) commands are stored on
+	// the Connection itself (above) and must not also live in the keychain.
 	connKey := conn.ID.String()
-	if password != "" {
+	if password != "" && !config.IsCommandValue(password) {
 		config.SetPassword(connKey, password)
 	} else {
 		config.DeletePassword(connKey)

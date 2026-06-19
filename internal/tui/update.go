@@ -55,16 +55,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connecting = false
 		if m.connectTarget != nil {
 			c := m.connectTarget
-			jumpHost := sshauth.ResolveJumpHost(m.cfg, c.JumpHost)
+			resolved, err := config.ResolveConnection(c)
+			if err != nil {
+				t, cmd := showToast("resolve: "+err.Error(), toastErr)
+				m.activeToast = &t
+				m.connectTarget = nil
+				return m, cmd
+			}
+			jumpHost := sshauth.ResolveJumpHost(m.cfg, resolved.JumpHost)
 			var opts *config.SSHOptions
-			if c.UseGlobalSettings == nil || *c.UseGlobalSettings {
-				mo := config.MergeSSHOptions(m.globalCfg.SSHOptions, c.SSHOptions)
+			if resolved.UseGlobalSettings == nil || *resolved.UseGlobalSettings {
+				mo := config.MergeSSHOptions(m.globalCfg.SSHOptions, resolved.SSHOptions)
 				opts = &mo
 			} else {
-				opts = c.SSHOptions
+				opts = resolved.SSHOptions
 			}
-			shellInit := sshauth.ComposeShellInit(m.cfg, c)
-			cmd, cleanup := sshauth.NewSSHCommand(c, jumpHost, opts, shellInit)
+			shellInit := sshauth.ComposeShellInit(m.cfg, resolved)
+			cmd, cleanup := sshauth.NewSSHCommand(resolved, jumpHost, opts, shellInit)
 			return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 				cleanup()
 				return sshExitMsg{err: err}
@@ -329,7 +336,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d := items[m.cursor].db
 				m.form = formEditDatabase
 				m.formTarget = d.ID
-				pw, _ := config.GetPassword(d.ID.String())
+				pw := d.Password
+				if pw == "" {
+					pw, _ = config.GetPassword(d.ID.String())
+				}
 				m.formFields = make([]string, dbFieldCount)
 				m.formFields[dbFieldEngine] = string(d.Engine)
 				m.formFields[dbFieldName] = d.Name
@@ -353,9 +363,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if c != nil {
 					m.form = formEdit
 					m.formTarget = c.ID
-					existingPass, _ := config.GetPassword(c.ID.String())
+					// Prefer the connection's stored $(...) command form; fall back
+					// to whatever lives in the keychain.
+					existingPass := c.Password
 					if existingPass == "" {
-						existingPass, _ = config.GetPassword(c.Name)
+						existingPass, _ = config.GetPassword(c.ID.String())
+						if existingPass == "" {
+							existingPass, _ = config.GetPassword(c.Name)
+						}
 					}
 					m.formFields = make([]string, fieldAdvancedCount)
 					m.formFields[fieldName] = c.Name
