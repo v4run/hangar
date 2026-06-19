@@ -321,15 +321,19 @@ func (m Model) renderSidebar() string {
 			if len(displayName) > availWidth {
 				displayName = displayName[:availWidth-1] + "…"
 			}
+			// Right-align the badge: pad between the name and the badge so
+			// the badge always sits flush against the sidebar edge.
+			nameSeg := indent + displayName
+			nameW := lipgloss.Width(nameSeg)
+			pad := sidebarW - nameW - badgeW
+			if pad < 1 {
+				pad = 1
+			}
+			row := nameSeg + strings.Repeat(" ", pad) + badge
 			if isCursor {
-				row := indent + displayName + badge
-				rowW := lipgloss.Width(row)
-				if rowW < sidebarW {
-					row += strings.Repeat(" ", sidebarW-rowW)
-				}
 				b.WriteString(sidebarSelectedStyle.Render(row))
 			} else {
-				b.WriteString(indent + normalStyle.Render(displayName) + badge)
+				b.WriteString(row)
 			}
 		}
 		b.WriteString("\n")
