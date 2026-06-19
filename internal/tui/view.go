@@ -322,12 +322,12 @@ func (m Model) renderSidebar() string {
 				displayName = displayName[:availWidth-1] + "…"
 			}
 			if isCursor {
-				row := indent + displayName
+				row := indent + displayName + badge
 				rowW := lipgloss.Width(row)
-				if rowW+badgeW < sidebarW {
-					row += strings.Repeat(" ", sidebarW-rowW-badgeW)
+				if rowW < sidebarW {
+					row += strings.Repeat(" ", sidebarW-rowW)
 				}
-				b.WriteString(sidebarSelectedStyle.Render(row) + badge)
+				b.WriteString(sidebarSelectedStyle.Render(row))
 			} else {
 				b.WriteString(indent + normalStyle.Render(displayName) + badge)
 			}
