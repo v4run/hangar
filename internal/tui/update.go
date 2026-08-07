@@ -26,6 +26,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearToastMsg:
 		m.activeToast = nil
 
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
+
 	case dbExitMsg:
 		text := fmt.Sprintf("closed %s", msg.name)
 		level := toastOK

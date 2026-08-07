@@ -634,6 +634,62 @@ func (m Model) handleNotesInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// sidebarLayout describes the fixed geometry of the sidebar within the
+// terminal so we can map click coordinates to item indices.
+const (
+	sidebarPaneX0     = 1 // outer padding col
+	sidebarPaneWidth  = 26
+	sidebarItemsY0Pad = 1 // outer padding row
+	// Rows inside the sidebar before items start: title(1) + divider(1) +
+	// filter(1) + up-indicator(1) = 4.
+	sidebarItemsY0Inner = 4
+)
+
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Only act while the sidebar is the primary view (no form / help open).
+	if m.form != formNone || m.showHelp || m.connecting || m.visualMode {
+		return m, nil
+	}
+
+	inSidebar := msg.X >= sidebarPaneX0 && msg.X < sidebarPaneX0+sidebarPaneWidth
+	if !inSidebar {
+		return m, nil
+	}
+
+	itemsY0 := sidebarItemsY0Pad + sidebarItemsY0Inner
+	items := m.sidebarItems()
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if m.sidebarOffset > 0 {
+			m.sidebarOffset--
+		}
+		return m, nil
+	case tea.MouseButtonWheelDown:
+		visible := m.sidebarVisibleRows()
+		if m.sidebarOffset+visible < len(items) {
+			m.sidebarOffset++
+		}
+		return m, nil
+	case tea.MouseButtonLeft:
+		if msg.Action != tea.MouseActionPress {
+			return m, nil
+		}
+		row := msg.Y - itemsY0
+		if row < 0 {
+			return m, nil
+		}
+		idx := row + m.sidebarOffset
+		if idx < 0 || idx >= len(items) {
+			return m, nil
+		}
+		m.focus = focusSidebar
+		m.cursor = idx
+		m.adjustSidebarViewport()
+	}
+	return m, nil
+}
+
 func (m Model) launchDatabase(d *config.Database) (tea.Cmd, error) {
 	resolved, err := config.ResolveDatabase(d)
 	if err != nil {
