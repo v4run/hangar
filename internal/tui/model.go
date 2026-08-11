@@ -200,6 +200,7 @@ type Model struct {
 	shellInitInput   string              // text being edited in shell-init form
 	shellInitScope   int                 // shellInitScopeConnection/Group/Global
 	shellInitGroup   string              // group name when scope=group
+	mouseEnabled     bool                // toggled via M — turn off to select text
 }
 
 type sshExitMsg struct{ err error }
@@ -222,5 +223,6 @@ func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDi
 		cutConnections:   make(map[uuid.UUID]bool),
 		copyConnections:  make(map[uuid.UUID]bool),
 		runningScriptIdx: -1,
+		mouseEnabled:     true,
 	}
 }

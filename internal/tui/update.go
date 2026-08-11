@@ -38,21 +38,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		t, cmd := showToast(text, level)
 		m.activeToast = &t
-		return m, cmd
+		return m, tea.Batch(cmd, m.restoreMouseCmd())
 
 	case shellInitEditorDoneMsg:
 		if msg.err != nil {
 			t, cmd := showToast(fmt.Sprintf("editor: %s", msg.err), toastErr)
 			m.activeToast = &t
 			m.form = formNone
-			return m, cmd
+			return m, tea.Batch(cmd, m.restoreMouseCmd())
 		}
 		m.shellInitInput = msg.content
 		if m.form == formEditShellInit {
 			m.persistShellInit()
 			m.form = formNone
 		}
-		return m, nil
+		return m, m.restoreMouseCmd()
 
 	case connectReadyMsg:
 		m.connecting = false
@@ -133,16 +133,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t, cmd := showToast(text, toastErr)
 			m.activeToast = &t
 			m.connectTarget = nil
-			return m, cmd
+			return m, tea.Batch(cmd, m.restoreMouseCmd())
 		}
 		if name != "" {
 			t, cmd := showToast(fmt.Sprintf("disconnected from %s — %s", name, durStr), toastOK)
 			m.activeToast = &t
 			m.connectTarget = nil
-			return m, cmd
+			return m, tea.Batch(cmd, m.restoreMouseCmd())
 		}
 		m.connectTarget = nil
-		return m, nil
+		return m, m.restoreMouseCmd()
 
 	case tea.KeyMsg:
 		// Help overlay intercepts keys
@@ -276,6 +276,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "M":
+			// Toggle mouse tracking so the user can drag-select text
+			// in the terminal without hangar swallowing the events.
+			m.mouseEnabled = !m.mouseEnabled
+			var (
+				mouseCmd tea.Cmd
+				label    string
+			)
+			if m.mouseEnabled {
+				mouseCmd = tea.EnableMouseCellMotion
+				label = "mouse on"
+			} else {
+				mouseCmd = tea.DisableMouse
+				label = "mouse off (text select ok)"
+			}
+			t, tCmd := showToast(label, toastOK)
+			m.activeToast = &t
+			return m, tea.Batch(mouseCmd, tCmd)
 		case "j", "down":
 			items := m.sidebarItems()
 			if m.cursor < len(items)-1 {

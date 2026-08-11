@@ -645,6 +645,16 @@ const (
 	sidebarItemsY0Inner = 4
 )
 
+// restoreMouseCmd re-enables mouse tracking if the user hasn't turned it
+// off via `M`. Called after tea.ExecProcess (ssh / db-client / $EDITOR)
+// which suspends mouse tracking so the child owns the terminal.
+func (m Model) restoreMouseCmd() tea.Cmd {
+	if !m.mouseEnabled {
+		return nil
+	}
+	return tea.EnableMouseCellMotion
+}
+
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// Only act while the sidebar is the primary view (no form / help open).
 	if m.form != formNone || m.showHelp || m.connecting || m.visualMode {
