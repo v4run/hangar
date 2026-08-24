@@ -1458,6 +1458,9 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 			m.formError = err.Error()
 			return m, nil
 		}
+		// Add mints a UUID on its own copy of conn; read the assigned ID
+		// back off the slice so the keychain write below uses it.
+		conn.ID = m.cfg.Connections[len(m.cfg.Connections)-1].ID
 	} else if m.form == formEdit {
 		existing, findErr := m.cfg.FindByID(m.formTarget)
 		if findErr != nil {
