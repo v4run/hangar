@@ -114,6 +114,22 @@ func applyMainPaneScroll(text string, offset, height int, autoFocus bool) string
 	return strings.Join(out, "\n")
 }
 
+// maxMainPaneOffset returns the largest offset that still shows new
+// content in the right pane, matching applyMainPaneScroll's window math
+// (subtracts one line for the "▲ more above" indicator once scrolled).
+func (m Model) maxMainPaneOffset() int {
+	height := m.height - 1
+	if height < 1 {
+		return 0
+	}
+	lines := strings.Count(m.renderMainPane(), "\n") + 1
+	max := lines - height + 1 // +1 to compensate for the ▲ indicator
+	if max < 0 {
+		return 0
+	}
+	return max
+}
+
 // formCanAutoScroll reports whether the current pane state contains a
 // focused "> " marker whose visibility should drive auto-scroll.
 func (m Model) formCanAutoScroll() bool {

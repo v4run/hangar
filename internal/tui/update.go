@@ -220,6 +220,9 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 				step = 1
 			}
 			m.mainPaneOffset += step
+			if max := m.maxMainPaneOffset(); m.mainPaneOffset > max {
+				m.mainPaneOffset = max
+			}
 			m.mainPaneManual = true
 			return m, nil
 		}

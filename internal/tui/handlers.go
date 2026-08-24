@@ -685,7 +685,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.mainPaneOffset++
+		if max := m.maxMainPaneOffset(); m.mainPaneOffset < max {
+			m.mainPaneOffset++
+		}
 		m.mainPaneManual = true
 		return m, nil
 	}
