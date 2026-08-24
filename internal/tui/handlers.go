@@ -60,22 +60,19 @@ func (m Model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterText = ""
 		m.cursor = 0
 		m.sidebarOffset = 0
+		return m, nil
 	case "enter":
 		m.filtering = false
 		m.cursor = 0
 		m.sidebarOffset = 0
-	case "backspace":
-		if len(m.filterText) > 0 {
-			m.filterText = m.filterText[:len(m.filterText)-1]
-		}
+		return m, nil
+	}
+	v, c, ok := textEditKey(m.filterText, m.formEditCursor, msg)
+	if ok {
+		m.filterText = v
+		m.formEditCursor = c
 		m.cursor = 0
 		m.sidebarOffset = 0
-	default:
-		if len(msg.String()) == 1 {
-			m.filterText += msg.String()
-			m.cursor = 0
-			m.sidebarOffset = 0
-		}
 	}
 	return m, nil
 }
@@ -111,6 +108,7 @@ func (m Model) handleFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
 			m.jumpSugCursor = 0
 		}
+		m.formEditCursor = len([]rune(m.formFields[m.formCursor]))
 	case "ctrl+s":
 		return m.saveForm()
 	}
@@ -119,14 +117,25 @@ func (m Model) handleFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleFormEditMode handles form input when editing a text field.
 func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+s" {
+		if m.formCursor == fieldJump {
+			m.formFields[fieldJump] = m.jumpHostResolve(m.formFields[fieldJump])
+		}
+		m.formEditing = false
+		return m.saveForm()
+	}
+	if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+		m.cycleField(msg, opts)
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "esc":
-		// Discard changes, revert to snapshot
 		m.formFields[m.formCursor] = m.formEditBuf
 		m.formEditing = false
 		m.jumpSuggestions = nil
+		return m, nil
 	case "enter":
-		// If on JumpHost with suggestions, select the highlighted one
 		if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 && m.jumpSugCursor >= 0 && m.jumpSugCursor < len(m.jumpSuggestions) {
 			selected := m.jumpSuggestions[m.jumpSugCursor]
 			m.formFields[fieldJump] = selected.ID.String()
@@ -135,19 +144,12 @@ func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formEditing = false
 			return m, nil
 		}
-		// Confirm edit, return to nav mode
 		if m.formCursor == fieldJump {
-			// Resolve typed name back to UUID for storage
 			m.formFields[fieldJump] = m.jumpHostResolve(m.formFields[fieldJump])
 		}
 		m.formEditing = false
 		m.jumpSuggestions = nil
-	case "ctrl+s":
-		if m.formCursor == fieldJump {
-			m.formFields[fieldJump] = m.jumpHostResolve(m.formFields[fieldJump])
-		}
-		m.formEditing = false
-		return m.saveForm()
+		return m, nil
 	case "ctrl+n":
 		if m.formCursor == fieldJump && len(m.jumpSuggestions) > 0 {
 			m.jumpSugCursor = (m.jumpSugCursor + 1) % len(m.jumpSuggestions)
@@ -158,74 +160,58 @@ func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.jumpSugCursor = (m.jumpSugCursor - 1 + len(m.jumpSuggestions)) % len(m.jumpSuggestions)
 			return m, nil
 		}
-	case "l":
-		// Cycle forward on constrained fields
-		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
-			current := m.formFields[m.formCursor]
-			next := opts[0]
-			for i, o := range opts {
-				if o == current && i+1 < len(opts) {
-					next = opts[i+1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = next
-			return m, nil
-		}
-		// Fall through to default for text fields
-		if m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += msg.String()
-			if m.formCursor == fieldJump {
-				m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
-				m.jumpSugCursor = 0
-			}
-		}
-	case "h":
-		// Cycle backward on constrained fields
-		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
-			current := m.formFields[m.formCursor]
-			prev := opts[len(opts)-1]
-			for i, o := range opts {
-				if o == current && i > 0 {
-					prev = opts[i-1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = prev
-			return m, nil
-		}
-		// Fall through to default for text fields
-		if m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += msg.String()
-			if m.formCursor == fieldJump {
-				m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
-				m.jumpSugCursor = 0
-			}
-		}
-	case "backspace":
-		if _, ok := fieldCycleOptions[m.formCursor]; ok {
-			return m, nil
-		}
-		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
-			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
-			if m.formCursor == fieldJump {
-				m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
-				m.jumpSugCursor = 0
-			}
-		}
-	default:
-		if _, ok := fieldCycleOptions[m.formCursor]; ok {
-			return m, nil
-		}
-		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += msg.String()
-			if m.formCursor == fieldJump {
-				m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
-				m.jumpSugCursor = 0
-			}
+	}
+
+	if m.formCursor >= len(m.formFields) {
+		return m, nil
+	}
+	v, c, ok := textEditKey(m.formFields[m.formCursor], m.formEditCursor, msg)
+	if ok {
+		m.formFields[m.formCursor] = v
+		m.formEditCursor = c
+		if m.formCursor == fieldJump {
+			m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
+			m.jumpSugCursor = 0
 		}
 	}
 	return m, nil
+}
+
+// cycleField mutates m.formFields[m.formCursor] to the next / previous
+// value in opts based on msg. Returns true when the key was handled.
+func (m *Model) cycleField(msg tea.KeyMsg, opts []string) bool {
+	switch msg.String() {
+	case "esc":
+		m.formFields[m.formCursor] = m.formEditBuf
+		m.formEditing = false
+		return true
+	case "enter":
+		m.formEditing = false
+		return true
+	case "l":
+		cur := m.formFields[m.formCursor]
+		next := opts[0]
+		for i, o := range opts {
+			if o == cur && i+1 < len(opts) {
+				next = opts[i+1]
+				break
+			}
+		}
+		m.formFields[m.formCursor] = next
+		return true
+	case "h":
+		cur := m.formFields[m.formCursor]
+		prev := opts[len(opts)-1]
+		for i, o := range opts {
+			if o == cur && i > 0 {
+				prev = opts[i-1]
+				break
+			}
+		}
+		m.formFields[m.formCursor] = prev
+		return true
+	}
+	return false
 }
 
 func (m Model) handleDBFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -249,6 +235,7 @@ func (m Model) handleDBFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.formCursor == dbFieldTunnel {
 			m.formFields[dbFieldTunnel] = m.jumpHostDisplay(m.formFields[dbFieldTunnel])
 		}
+		m.formEditCursor = len([]rune(m.formFields[m.formCursor]))
 	case "ctrl+s":
 		return m.saveDBForm()
 	}
@@ -256,67 +243,36 @@ func (m Model) handleDBFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDBFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.formFields[m.formCursor] = m.formEditBuf
-		m.formEditing = false
-	case "enter":
-		if m.formCursor == dbFieldTunnel {
-			m.formFields[dbFieldTunnel] = m.jumpHostResolve(m.formFields[dbFieldTunnel])
-		}
-		m.formEditing = false
-	case "ctrl+s":
+	if msg.String() == "ctrl+s" {
 		if m.formCursor == dbFieldTunnel {
 			m.formFields[dbFieldTunnel] = m.jumpHostResolve(m.formFields[dbFieldTunnel])
 		}
 		m.formEditing = false
 		return m.saveDBForm()
-	case "l":
-		if opts, ok := dbFieldCycleOptions[m.formCursor]; ok {
-			cur := m.formFields[m.formCursor]
-			next := opts[0]
-			for i, o := range opts {
-				if o == cur && i+1 < len(opts) {
-					next = opts[i+1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = next
-			return m, nil
+	}
+	if opts, ok := dbFieldCycleOptions[m.formCursor]; ok {
+		m.cycleField(msg, opts)
+		return m, nil
+	}
+	switch msg.String() {
+	case "esc":
+		m.formFields[m.formCursor] = m.formEditBuf
+		m.formEditing = false
+		return m, nil
+	case "enter":
+		if m.formCursor == dbFieldTunnel {
+			m.formFields[dbFieldTunnel] = m.jumpHostResolve(m.formFields[dbFieldTunnel])
 		}
-		if m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += msg.String()
-		}
-	case "h":
-		if opts, ok := dbFieldCycleOptions[m.formCursor]; ok {
-			cur := m.formFields[m.formCursor]
-			prev := opts[len(opts)-1]
-			for i, o := range opts {
-				if o == cur && i > 0 {
-					prev = opts[i-1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = prev
-			return m, nil
-		}
-		if m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += msg.String()
-		}
-	case "backspace":
-		if _, ok := dbFieldCycleOptions[m.formCursor]; ok {
-			return m, nil
-		}
-		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
-			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
-		}
-	default:
-		if _, ok := dbFieldCycleOptions[m.formCursor]; ok {
-			return m, nil
-		}
-		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += msg.String()
-		}
+		m.formEditing = false
+		return m, nil
+	}
+	if m.formCursor >= len(m.formFields) {
+		return m, nil
+	}
+	v, c, ok := textEditKey(m.formFields[m.formCursor], m.formEditCursor, msg)
+	if ok {
+		m.formFields[m.formCursor] = v
+		m.formEditCursor = c
 	}
 	return m, nil
 }
@@ -482,6 +438,7 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if c != nil {
 			m.form = formEditNotes
 			m.notesInput = c.Notes
+			m.formEditCursor = len([]rune(m.notesInput))
 		}
 	case "enter":
 		// Run the selected script
@@ -615,6 +572,7 @@ func (m Model) handleNotesInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.form = formNone
+		return m, nil
 	case "enter":
 		c := m.getSelectedConn()
 		if c != nil {
@@ -622,14 +580,12 @@ func (m Model) handleNotesInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			config.Save(m.configDir, m.cfg)
 		}
 		m.form = formNone
-	case "backspace":
-		if len(m.notesInput) > 0 {
-			m.notesInput = m.notesInput[:len(m.notesInput)-1]
-		}
-	default:
-		if len(msg.String()) == 1 {
-			m.notesInput += msg.String()
-		}
+		return m, nil
+	}
+	v, c, ok := textEditKey(m.notesInput, m.formEditCursor, msg)
+	if ok {
+		m.notesInput = v
+		m.formEditCursor = c
 	}
 	return m, nil
 }
@@ -929,14 +885,12 @@ func (m Model) handleAddGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cfg.Groups = append(m.cfg.Groups, name)
 		config.Save(m.configDir, m.cfg)
 		m.form = formNone
-	case "backspace":
-		if len(m.groupNameInput) > 0 {
-			m.groupNameInput = m.groupNameInput[:len(m.groupNameInput)-1]
-		}
-	default:
-		if len(msg.String()) == 1 {
-			m.groupNameInput += msg.String()
-		}
+		return m, nil
+	}
+	v, c, ok := textEditKey(m.groupNameInput, m.formEditCursor, msg)
+	if ok {
+		m.groupNameInput = v
+		m.formEditCursor = c
 	}
 	return m, nil
 }
@@ -993,14 +947,12 @@ func (m Model) handleEditGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		config.Save(m.configDir, m.cfg)
 		m.form = formNone
-	case "backspace":
-		if len(m.groupNameInput) > 0 {
-			m.groupNameInput = m.groupNameInput[:len(m.groupNameInput)-1]
-		}
-	default:
-		if len(msg.String()) == 1 {
-			m.groupNameInput += msg.String()
-		}
+		return m, nil
+	}
+	v, c, ok := textEditKey(m.groupNameInput, m.formEditCursor, msg)
+	if ok {
+		m.groupNameInput = v
+		m.formEditCursor = c
 	}
 	return m, nil
 }
@@ -1362,6 +1314,7 @@ func (m Model) handleGlobalSettingsNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	case "enter":
 		m.formEditing = true
 		m.formEditBuf = m.formFields[m.formCursor]
+		m.formEditCursor = len([]rune(m.formFields[m.formCursor]))
 	case "i", "I":
 		m.shellInitScope = shellInitScopeGlobal
 		m.shellInitInput = m.cfg.GlobalShellInit
@@ -1383,13 +1336,7 @@ func (m Model) handleGlobalSettingsNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 }
 
 func (m Model) handleGlobalSettingsEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.formFields[m.formCursor] = m.formEditBuf
-		m.formEditing = false
-	case "enter":
-		m.formEditing = false
-	case "ctrl+s":
+	if msg.String() == "ctrl+s" {
 		m.formEditing = false
 		opts, _ := parseSSHOptionsFromFields(m.formFields)
 		m.globalCfg.SSHOptions = opts
@@ -1398,52 +1345,27 @@ func (m Model) handleGlobalSettingsEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		m.activeToast = &t
 		m.form = formNone
 		return m, cmd
-	case "l":
-		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
-			current := m.formFields[m.formCursor]
-			next := opts[0]
-			for i, o := range opts {
-				if o == current && i+1 < len(opts) {
-					next = opts[i+1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = next
-			return m, nil
-		}
-		if m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += msg.String()
-		}
-	case "h":
-		if opts, ok := fieldCycleOptions[m.formCursor]; ok {
-			current := m.formFields[m.formCursor]
-			prev := opts[len(opts)-1]
-			for i, o := range opts {
-				if o == current && i > 0 {
-					prev = opts[i-1]
-					break
-				}
-			}
-			m.formFields[m.formCursor] = prev
-			return m, nil
-		}
-		if m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += msg.String()
-		}
-	case "backspace":
-		if _, ok := fieldCycleOptions[m.formCursor]; ok {
-			return m, nil
-		}
-		if m.formCursor < len(m.formFields) && len(m.formFields[m.formCursor]) > 0 {
-			m.formFields[m.formCursor] = m.formFields[m.formCursor][:len(m.formFields[m.formCursor])-1]
-		}
-	default:
-		if _, ok := fieldCycleOptions[m.formCursor]; ok {
-			return m, nil
-		}
-		if len(msg.String()) == 1 && m.formCursor < len(m.formFields) {
-			m.formFields[m.formCursor] += msg.String()
-		}
+	}
+	if opts, ok := fieldCycleOptions[m.formCursor]; ok {
+		m.cycleField(msg, opts)
+		return m, nil
+	}
+	switch msg.String() {
+	case "esc":
+		m.formFields[m.formCursor] = m.formEditBuf
+		m.formEditing = false
+		return m, nil
+	case "enter":
+		m.formEditing = false
+		return m, nil
+	}
+	if m.formCursor >= len(m.formFields) {
+		return m, nil
+	}
+	v, c, ok := textEditKey(m.formFields[m.formCursor], m.formEditCursor, msg)
+	if ok {
+		m.formFields[m.formCursor] = v
+		m.formEditCursor = c
 	}
 	return m, nil
 }

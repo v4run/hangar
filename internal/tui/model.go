@@ -203,6 +203,7 @@ type Model struct {
 	mouseEnabled     bool                // toggled via M — turn off to select text
 	mainPaneOffset   int                 // vertical scroll offset for the right pane
 	mainPaneManual   bool                // user drove scroll; suppresses auto-focus snap
+	formEditCursor   int                 // caret rune-index within the field being edited
 }
 
 type sshExitMsg struct{ err error }

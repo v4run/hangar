@@ -106,6 +106,92 @@ func (m Model) sidebarItems() []sidebarItem {
 	return items
 }
 
+// textEditKey applies a cursor-aware edit to (value, cursor) and returns
+// the updated value + cursor. handled==false means the key wasn't a text
+// operation and the caller should keep processing (e.g. its own enter/esc
+// dispatch).
+//
+// Recognised: left / right / home / end / ctrl+a / ctrl+e for cursor
+// movement, backspace / delete / ctrl+u / ctrl+w for editing, and any
+// single-rune input for insertion at the caret.
+func textEditKey(value string, cursor int, msg interface{ String() string }) (string, int, bool) {
+	runes := []rune(value)
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	key := msg.String()
+	switch key {
+	case "left", "ctrl+b":
+		if cursor > 0 {
+			cursor--
+		}
+		return string(runes), cursor, true
+	case "right", "ctrl+f":
+		if cursor < len(runes) {
+			cursor++
+		}
+		return string(runes), cursor, true
+	case "home", "ctrl+a":
+		return string(runes), 0, true
+	case "end", "ctrl+e":
+		return string(runes), len(runes), true
+	case "backspace":
+		if cursor > 0 {
+			runes = append(runes[:cursor-1], runes[cursor:]...)
+			cursor--
+		}
+		return string(runes), cursor, true
+	case "delete":
+		if cursor < len(runes) {
+			runes = append(runes[:cursor], runes[cursor+1:]...)
+		}
+		return string(runes), cursor, true
+	case "ctrl+u":
+		return string(runes[cursor:]), 0, true
+	case "ctrl+k":
+		return string(runes[:cursor]), cursor, true
+	case "ctrl+w":
+		// Delete previous word (whitespace boundary).
+		i := cursor
+		for i > 0 && runes[i-1] == ' ' {
+			i--
+		}
+		for i > 0 && runes[i-1] != ' ' {
+			i--
+		}
+		runes = append(runes[:i], runes[cursor:]...)
+		return string(runes), i, true
+	}
+	// Single-character insertion. Skip control chords / navigation we
+	// didn't recognise so callers can react to their own keybinds.
+	if len(key) == 1 {
+		r := []rune(key)[0]
+		runes = append(runes[:cursor], append([]rune{r}, runes[cursor:]...)...)
+		return string(runes), cursor + 1, true
+	}
+	return value, cursor, false
+}
+
+// renderTextWithCursor returns value with a caret glyph inserted at the
+// given rune-index. Cursor characters are styled via cursorStyle so they
+// stand out against normalStyle text.
+func renderTextWithCursor(value string, cursor int) string {
+	runes := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	before := string(runes[:cursor])
+	after := string(runes[cursor:])
+	caret := cursorStyle.Render("│")
+	return normalStyle.Render(before) + caret + normalStyle.Render(after)
+}
+
 func engineBadge(e config.DBEngine) string {
 	switch e {
 	case config.EnginePostgres:

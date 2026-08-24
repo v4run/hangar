@@ -372,6 +372,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "/":
 			m.filtering = true
 			m.filterText = ""
+			m.formEditCursor = 0
 		case "s", "S":
 			gc, err := config.LoadGlobal(m.configDir)
 			if err != nil {
@@ -402,6 +403,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.form = formEditGroup
 				m.formTargetGroup = items[m.cursor].group
 				m.groupNameInput = items[m.cursor].group
+				m.formEditCursor = len([]rune(m.groupNameInput))
 				m.formError = ""
 			} else if m.cursor < len(items) && items[m.cursor].db != nil {
 				d := items[m.cursor].db
@@ -477,6 +479,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// New group
 			m.form = formAddGroup
 			m.groupNameInput = ""
+			m.formEditCursor = 0
 			m.formError = ""
 		case "x":
 			// Toggle cut on connection

@@ -298,7 +298,7 @@ func (m Model) renderSidebar() string {
 	b.WriteString("\n")
 
 	if m.filtering {
-		b.WriteString(dimStyle.Render(" /") + " " + normalStyle.Render(m.filterText) + cursorStyle.Render("_"))
+		b.WriteString(dimStyle.Render(" /") + " " + renderTextWithCursor(m.filterText, m.formEditCursor))
 	} else if m.filterText != "" {
 		b.WriteString(dimStyle.Render(" / " + m.filterText))
 	}
@@ -712,7 +712,7 @@ func (m Model) renderForm() string {
 		label := labelStyle.Render(strings.ToLower(fieldLabels[i]))
 		if i == m.formCursor {
 			if m.formEditing {
-				b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+				b.WriteString(activeFieldStyle.Render("> ") + label + " " + renderTextWithCursor(value, m.formEditCursor))
 			} else {
 				b.WriteString(activeFieldStyle.Render("> ") + label + " " + selectedStyle.Render(value))
 			}
@@ -768,7 +768,7 @@ func (m Model) renderForm() string {
 						ph := fieldPlaceholders[i]
 						b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
 					} else {
-						b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + renderTextWithCursor(value, m.formEditCursor))
 					}
 				} else {
 					if value == "" {
@@ -825,7 +825,7 @@ func (m Model) renderAddGroup() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("New Group"))
 	b.WriteString("\n\n")
-	b.WriteString(activeFieldStyle.Render("> name") + " " + normalStyle.Render(m.groupNameInput) + cursorStyle.Render("_"))
+	b.WriteString(activeFieldStyle.Render("> name") + " " + renderTextWithCursor(m.groupNameInput, m.formEditCursor))
 
 	if m.formError != "" {
 		b.WriteString("\n\n" + errorStyle.Render("  "+m.formError))
@@ -838,7 +838,7 @@ func (m Model) renderEditGroup() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Edit Group"))
 	b.WriteString("\n\n")
-	b.WriteString(activeFieldStyle.Render("> name") + " " + normalStyle.Render(m.groupNameInput) + cursorStyle.Render("_"))
+	b.WriteString(activeFieldStyle.Render("> name") + " " + renderTextWithCursor(m.groupNameInput, m.formEditCursor))
 
 	if m.formError != "" {
 		b.WriteString("\n\n" + errorStyle.Render("  "+m.formError))
@@ -879,7 +879,7 @@ func (m Model) renderGlobalSettings() string {
 						ph := fieldPlaceholders[i]
 						b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
 					} else {
-						b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+						b.WriteString(activeFieldStyle.Render("> ") + label + " " + renderTextWithCursor(value, m.formEditCursor))
 					}
 				} else {
 					if value == "" {
@@ -1094,7 +1094,7 @@ func (m Model) renderDBForm() string {
 					ph := dbFieldPlaceholders[i]
 					b.WriteString(activeFieldStyle.Render("> ") + label + " " + dimStyle.Render(ph) + cursorStyle.Render("_"))
 				} else {
-					b.WriteString(activeFieldStyle.Render("> ") + label + " " + normalStyle.Render(value) + cursorStyle.Render("_"))
+					b.WriteString(activeFieldStyle.Render("> ") + label + " " + renderTextWithCursor(value, m.formEditCursor))
 				}
 			} else if isActive {
 				disp := value
@@ -1174,7 +1174,7 @@ func (m Model) renderNotesForm() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Edit Notes"))
 	b.WriteString("\n\n")
-	b.WriteString(activeFieldStyle.Render("> ") + normalStyle.Render(m.notesInput) + cursorStyle.Render("_"))
+	b.WriteString(activeFieldStyle.Render("> ") + renderTextWithCursor(m.notesInput, m.formEditCursor))
 	return b.String()
 }
 
