@@ -26,6 +26,7 @@ func (m Model) View() string {
 
 	sidebar := m.renderSidebar()
 	mainPane := m.renderMainPane()
+	mainPane = applyMainPaneScroll(mainPane, m.mainPaneOffset, contentHeight, m.formCanAutoScroll())
 
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -38,6 +39,89 @@ func (m Model) View() string {
 
 	composed := lipgloss.JoinVertical(lipgloss.Left, content, statusBar)
 	return lipgloss.NewStyle().Padding(1, 1).Render(composed)
+}
+
+// applyMainPaneScroll clips the rendered right-pane text to a vertical
+// window of `height` lines starting at `offset`, auto-adjusting the
+// offset (when autoFocus is true) so the row containing the "> " marker
+// stays inside the window. Prepends "▲" / appends "▼" indicators when
+// there's clipped content above / below.
+func applyMainPaneScroll(text string, offset, height int, autoFocus bool) string {
+	if height <= 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) <= height {
+		return text
+	}
+
+	effOffset := offset
+	if autoFocus {
+		focus := -1
+		for i, ln := range lines {
+			if strings.Contains(ln, "> ") {
+				focus = i
+				break
+			}
+		}
+		if focus >= 0 {
+			// Keep the focused row within a 1-line margin from the edges.
+			if focus < effOffset+1 {
+				effOffset = focus - 1
+			}
+			if focus >= effOffset+height-1 {
+				effOffset = focus - height + 2
+			}
+		}
+	}
+	if effOffset < 0 {
+		effOffset = 0
+	}
+	maxOffset := len(lines) - height
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if effOffset > maxOffset {
+		effOffset = maxOffset
+	}
+
+	visibleHeight := height
+	hasAbove := effOffset > 0
+	hasBelow := effOffset+visibleHeight < len(lines)
+	if hasAbove {
+		visibleHeight--
+	}
+	if hasBelow {
+		visibleHeight--
+	}
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+	end := effOffset + visibleHeight
+	if end > len(lines) {
+		end = len(lines)
+	}
+	window := lines[effOffset:end]
+
+	var out []string
+	if hasAbove {
+		out = append(out, dimStyle.Render("▲ "+fmt.Sprintf("%d more above", effOffset)))
+	}
+	out = append(out, window...)
+	if hasBelow {
+		out = append(out, dimStyle.Render("▼ "+fmt.Sprintf("%d more below", len(lines)-end)))
+	}
+	return strings.Join(out, "\n")
+}
+
+// formCanAutoScroll reports whether the current pane state contains a
+// focused "> " marker whose visibility should drive auto-scroll.
+func (m Model) formCanAutoScroll() bool {
+	switch m.form {
+	case formAdd, formEdit, formAddDatabase, formEditDatabase, formGlobalSettings:
+		return true
+	}
+	return false
 }
 
 func (m Model) renderStatusBar() string {

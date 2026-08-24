@@ -656,35 +656,48 @@ func (m Model) restoreMouseCmd() tea.Cmd {
 }
 
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Only act while the sidebar is the primary view (no form / help open).
-	if m.form != formNone || m.showHelp || m.connecting || m.visualMode {
+	if m.connecting || m.visualMode {
 		return m, nil
 	}
 
 	inSidebar := msg.X >= sidebarPaneX0 && msg.X < sidebarPaneX0+sidebarPaneWidth
-	if !inSidebar {
-		return m, nil
-	}
 
-	itemsY0 := sidebarItemsY0Pad + sidebarItemsY0Inner
-	items := m.sidebarItems()
-
+	// Wheel: sidebar or right pane depending on where the cursor is.
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
-		if m.sidebarOffset > 0 {
-			m.sidebarOffset--
+		if inSidebar && m.form == formNone && !m.showHelp {
+			if m.sidebarOffset > 0 {
+				m.sidebarOffset--
+			}
+			return m, nil
+		}
+		if m.mainPaneOffset > 0 {
+			m.mainPaneOffset--
 		}
 		return m, nil
 	case tea.MouseButtonWheelDown:
-		visible := m.sidebarVisibleRows()
-		if m.sidebarOffset+visible < len(items) {
-			m.sidebarOffset++
-		}
-		return m, nil
-	case tea.MouseButtonLeft:
-		if msg.Action != tea.MouseActionPress {
+		if inSidebar && m.form == formNone && !m.showHelp {
+			visible := m.sidebarVisibleRows()
+			items := m.sidebarItems()
+			if m.sidebarOffset+visible < len(items) {
+				m.sidebarOffset++
+			}
 			return m, nil
 		}
+		m.mainPaneOffset++
+		return m, nil
+	}
+
+	// Left click only meaningful in sidebar-selection mode.
+	if m.form != formNone || m.showHelp {
+		return m, nil
+	}
+	if !inSidebar {
+		return m, nil
+	}
+	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+		itemsY0 := sidebarItemsY0Pad + sidebarItemsY0Inner
+		items := m.sidebarItems()
 		row := msg.Y - itemsY0
 		if row < 0 {
 			return m, nil
@@ -695,6 +708,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		m.focus = focusSidebar
 		m.cursor = idx
+		m.mainPaneOffset = 0
 		m.adjustSidebarViewport()
 	}
 	return m, nil

@@ -201,6 +201,7 @@ type Model struct {
 	shellInitScope   int                 // shellInitScopeConnection/Group/Global
 	shellInitGroup   string              // group name when scope=group
 	mouseEnabled     bool                // toggled via M — turn off to select text
+	mainPaneOffset   int                 // vertical scroll offset for the right pane
 }
 
 type sshExitMsg struct{ err error }

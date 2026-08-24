@@ -16,6 +16,19 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	prevForm := m.form
+	prevShowHelp := m.showHelp
+	newModel, cmd := m.updateInner(msg)
+	if nm, ok := newModel.(Model); ok {
+		if nm.form != prevForm || nm.showHelp != prevShowHelp {
+			nm.mainPaneOffset = 0
+		}
+		return nm, cmd
+	}
+	return newModel, cmd
+}
+
+func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		// Reserve 1 col on each side and 1 row top/bottom for outer padding;
@@ -180,6 +193,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		// Right-pane scrolling — intercepted before form dispatch so it
+		// works uniformly across forms, help, detail views.
+		switch msg.String() {
+		case "pgup":
+			step := m.height / 2
+			if step < 1 {
+				step = 1
+			}
+			m.mainPaneOffset -= step
+			if m.mainPaneOffset < 0 {
+				m.mainPaneOffset = 0
+			}
+			return m, nil
+		case "pgdown":
+			step := m.height / 2
+			if step < 1 {
+				step = 1
+			}
+			m.mainPaneOffset += step
+			return m, nil
+		}
+
 		// Form input handling
 		if m.form == formAdd || m.form == formEdit {
 			return m.handleFormInput(msg)
@@ -300,11 +335,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			}
 			m.adjustSidebarViewport()
+			m.mainPaneOffset = 0
 		case "k", "up":
 			if m.cursor > 0 {
 				m.cursor--
 			}
 			m.adjustSidebarViewport()
+			m.mainPaneOffset = 0
 		case " ":
 			// Toggle group collapse
 			items := m.sidebarItems()
@@ -313,6 +350,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.collapsed[g] = !m.collapsed[g]
 			}
 			m.adjustSidebarViewport()
+			m.mainPaneOffset = 0
 		case "l":
 			// Move focus to scripts pane
 			if m.selectedConnection() != nil {

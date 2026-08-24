@@ -55,7 +55,8 @@ func (m Model) renderHelp() string {
 			{"s / S", "sync from ~/.ssh/config"},
 			{"J / K", "reorder connection or group"},
 			{"M", "toggle mouse (off = drag-select text)"},
-			{"click / wheel", "select row / scroll sidebar"},
+			{"click / wheel", "select row / scroll sidebar or right pane"},
+			{"pgup / pgdn", "scroll the right pane (works in forms too)"},
 			{"q / ctrl+c", "quit"},
 		}},
 	}
