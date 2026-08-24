@@ -3,6 +3,7 @@ package tui
 import (
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
 )
@@ -203,7 +204,7 @@ type Model struct {
 	mouseEnabled     bool                // toggled via M — turn off to select text
 	mainPaneOffset   int                 // vertical scroll offset for the right pane
 	mainPaneManual   bool                // user drove scroll; suppresses auto-focus snap
-	formEditCursor   int                 // caret rune-index within the field being edited
+	editInput        textinput.Model     // shared input widget used when a text field is being edited
 }
 
 type sshExitMsg struct{ err error }
@@ -216,6 +217,10 @@ type dbExitMsg struct {
 type connectReadyMsg struct{}
 
 func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDir string, sshChanged bool) Model {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.CharLimit = 0
+	ti.Width = 40
 	return Model{
 		cfg:              cfg,
 		globalCfg:        globalCfg,
@@ -227,5 +232,6 @@ func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDi
 		copyConnections:  make(map[uuid.UUID]bool),
 		runningScriptIdx: -1,
 		mouseEnabled:     true,
+		editInput:        ti,
 	}
 }

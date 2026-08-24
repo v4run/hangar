@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
@@ -12,7 +13,7 @@ import (
 )
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return textinput.Blink
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -372,7 +373,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "/":
 			m.filtering = true
 			m.filterText = ""
-			m.formEditCursor = 0
+			return m, m.beginEdit("", "filter", false)
 		case "s", "S":
 			gc, err := config.LoadGlobal(m.configDir)
 			if err != nil {
@@ -403,8 +404,8 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.form = formEditGroup
 				m.formTargetGroup = items[m.cursor].group
 				m.groupNameInput = items[m.cursor].group
-				m.formEditCursor = len([]rune(m.groupNameInput))
 				m.formError = ""
+				return m, m.beginEdit(m.groupNameInput, "group name", false)
 			} else if m.cursor < len(items) && items[m.cursor].db != nil {
 				d := items[m.cursor].db
 				m.form = formEditDatabase
@@ -479,8 +480,8 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// New group
 			m.form = formAddGroup
 			m.groupNameInput = ""
-			m.formEditCursor = 0
 			m.formError = ""
+			return m, m.beginEdit("", "group name", false)
 		case "x":
 			// Toggle cut on connection
 			c := m.selectedConnection()

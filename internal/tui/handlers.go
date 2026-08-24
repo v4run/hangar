@@ -56,25 +56,26 @@ func (m *Model) openShellInitInEditor() tea.Cmd {
 func (m Model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		m.editInput.Blur()
 		m.filtering = false
 		m.filterText = ""
 		m.cursor = 0
 		m.sidebarOffset = 0
 		return m, nil
 	case "enter":
+		m.filterText = m.editInput.Value()
+		m.editInput.Blur()
 		m.filtering = false
 		m.cursor = 0
 		m.sidebarOffset = 0
 		return m, nil
 	}
-	v, c, ok := textEditKey(m.filterText, m.formEditCursor, msg)
-	if ok {
-		m.filterText = v
-		m.formEditCursor = c
-		m.cursor = 0
-		m.sidebarOffset = 0
-	}
-	return m, nil
+	var cmd tea.Cmd
+	m.editInput, cmd = m.editInput.Update(msg)
+	m.filterText = m.editInput.Value()
+	m.cursor = 0
+	m.sidebarOffset = 0
+	return m, cmd
 }
 
 func (m Model) handleFormInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -99,16 +100,18 @@ func (m Model) handleFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.jumpSuggestions = nil
 		m.jumpSugCursor = 0
 	case "enter":
-		// Enter edit mode for all fields
 		m.formEditing = true
 		m.formEditBuf = m.formFields[m.formCursor]
+		if _, isCycle := fieldCycleOptions[m.formCursor]; isCycle {
+			return m, nil
+		}
 		if m.formCursor == fieldJump {
-			// Convert UUID to display name for editing
 			m.formFields[fieldJump] = m.jumpHostDisplay(m.formFields[fieldJump])
 			m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
 			m.jumpSugCursor = 0
 		}
-		m.formEditCursor = len([]rune(m.formFields[m.formCursor]))
+		masked := m.formCursor == fieldPassword
+		return m, m.beginEdit(m.formFields[m.formCursor], fieldPlaceholders[m.formCursor], masked)
 	case "ctrl+s":
 		return m.saveForm()
 	}
@@ -118,6 +121,9 @@ func (m Model) handleFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleFormEditMode handles form input when editing a text field.
 func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+s" {
+		if _, isCycle := fieldCycleOptions[m.formCursor]; !isCycle {
+			m.endEdit(m.formCursor)
+		}
 		if m.formCursor == fieldJump {
 			m.formFields[fieldJump] = m.jumpHostResolve(m.formFields[fieldJump])
 		}
@@ -132,6 +138,7 @@ func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.formFields[m.formCursor] = m.formEditBuf
+		m.editInput.Blur()
 		m.formEditing = false
 		m.jumpSuggestions = nil
 		return m, nil
@@ -141,9 +148,11 @@ func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formFields[fieldJump] = selected.ID.String()
 			m.jumpSuggestions = nil
 			m.jumpSugCursor = 0
+			m.editInput.Blur()
 			m.formEditing = false
 			return m, nil
 		}
+		m.endEdit(m.formCursor)
 		if m.formCursor == fieldJump {
 			m.formFields[fieldJump] = m.jumpHostResolve(m.formFields[fieldJump])
 		}
@@ -162,19 +171,14 @@ func (m Model) handleFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.formCursor >= len(m.formFields) {
-		return m, nil
+	var cmd tea.Cmd
+	m.editInput, cmd = m.editInput.Update(msg)
+	m.formFields[m.formCursor] = m.editInput.Value()
+	if m.formCursor == fieldJump {
+		m.jumpSuggestions = m.jumpHostSuggestions(m.editInput.Value())
+		m.jumpSugCursor = 0
 	}
-	v, c, ok := textEditKey(m.formFields[m.formCursor], m.formEditCursor, msg)
-	if ok {
-		m.formFields[m.formCursor] = v
-		m.formEditCursor = c
-		if m.formCursor == fieldJump {
-			m.jumpSuggestions = m.jumpHostSuggestions(m.formFields[fieldJump])
-			m.jumpSugCursor = 0
-		}
-	}
-	return m, nil
+	return m, cmd
 }
 
 // cycleField mutates m.formFields[m.formCursor] to the next / previous
@@ -232,10 +236,14 @@ func (m Model) handleDBFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.formEditing = true
 		m.formEditBuf = m.formFields[m.formCursor]
+		if _, isCycle := dbFieldCycleOptions[m.formCursor]; isCycle {
+			return m, nil
+		}
 		if m.formCursor == dbFieldTunnel {
 			m.formFields[dbFieldTunnel] = m.jumpHostDisplay(m.formFields[dbFieldTunnel])
 		}
-		m.formEditCursor = len([]rune(m.formFields[m.formCursor]))
+		masked := m.formCursor == dbFieldPassword
+		return m, m.beginEdit(m.formFields[m.formCursor], dbFieldPlaceholders[m.formCursor], masked)
 	case "ctrl+s":
 		return m.saveDBForm()
 	}
@@ -244,6 +252,9 @@ func (m Model) handleDBFormNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleDBFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+s" {
+		if _, isCycle := dbFieldCycleOptions[m.formCursor]; !isCycle {
+			m.endEdit(m.formCursor)
+		}
 		if m.formCursor == dbFieldTunnel {
 			m.formFields[dbFieldTunnel] = m.jumpHostResolve(m.formFields[dbFieldTunnel])
 		}
@@ -257,24 +268,21 @@ func (m Model) handleDBFormEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.formFields[m.formCursor] = m.formEditBuf
+		m.editInput.Blur()
 		m.formEditing = false
 		return m, nil
 	case "enter":
+		m.endEdit(m.formCursor)
 		if m.formCursor == dbFieldTunnel {
 			m.formFields[dbFieldTunnel] = m.jumpHostResolve(m.formFields[dbFieldTunnel])
 		}
 		m.formEditing = false
 		return m, nil
 	}
-	if m.formCursor >= len(m.formFields) {
-		return m, nil
-	}
-	v, c, ok := textEditKey(m.formFields[m.formCursor], m.formEditCursor, msg)
-	if ok {
-		m.formFields[m.formCursor] = v
-		m.formEditCursor = c
-	}
-	return m, nil
+	var cmd tea.Cmd
+	m.editInput, cmd = m.editInput.Update(msg)
+	m.formFields[m.formCursor] = m.editInput.Value()
+	return m, cmd
 }
 
 func (m Model) saveDBForm() (tea.Model, tea.Cmd) {
@@ -438,7 +446,7 @@ func (m Model) handleScriptsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if c != nil {
 			m.form = formEditNotes
 			m.notesInput = c.Notes
-			m.formEditCursor = len([]rune(m.notesInput))
+			return m, m.beginEdit(m.notesInput, "notes", false)
 		}
 	case "enter":
 		// Run the selected script
@@ -571,23 +579,23 @@ func (m Model) handleDeleteScriptConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleNotesInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		m.editInput.Blur()
 		m.form = formNone
 		return m, nil
 	case "enter":
-		c := m.getSelectedConn()
-		if c != nil {
+		m.notesInput = m.editInput.Value()
+		if c := m.getSelectedConn(); c != nil {
 			c.Notes = strings.TrimSpace(m.notesInput)
 			config.Save(m.configDir, m.cfg)
 		}
+		m.editInput.Blur()
 		m.form = formNone
 		return m, nil
 	}
-	v, c, ok := textEditKey(m.notesInput, m.formEditCursor, msg)
-	if ok {
-		m.notesInput = v
-		m.formEditCursor = c
-	}
-	return m, nil
+	var cmd tea.Cmd
+	m.editInput, cmd = m.editInput.Update(msg)
+	m.notesInput = m.editInput.Value()
+	return m, cmd
 }
 
 // sidebarLayout describes the fixed geometry of the sidebar within the
@@ -870,9 +878,11 @@ func (m *Model) persistShellInit() {
 func (m Model) handleAddGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		m.editInput.Blur()
 		m.form = formNone
+		return m, nil
 	case "enter":
-		name := strings.TrimSpace(m.groupNameInput)
+		name := strings.TrimSpace(m.editInput.Value())
 		if name == "" {
 			m.formError = "group name is required"
 			return m, nil
@@ -884,29 +894,31 @@ func (m Model) handleAddGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.collapsed[name] = false
 		m.cfg.Groups = append(m.cfg.Groups, name)
 		config.Save(m.configDir, m.cfg)
+		m.editInput.Blur()
 		m.form = formNone
 		return m, nil
 	}
-	v, c, ok := textEditKey(m.groupNameInput, m.formEditCursor, msg)
-	if ok {
-		m.groupNameInput = v
-		m.formEditCursor = c
-	}
-	return m, nil
+	var cmd tea.Cmd
+	m.editInput, cmd = m.editInput.Update(msg)
+	m.groupNameInput = m.editInput.Value()
+	return m, cmd
 }
 
 func (m Model) handleEditGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		m.editInput.Blur()
 		m.form = formNone
+		return m, nil
 	case "enter":
-		newName := strings.TrimSpace(m.groupNameInput)
+		newName := strings.TrimSpace(m.editInput.Value())
 		if newName == "" {
 			m.formError = "group name is required"
 			return m, nil
 		}
 		oldName := m.formTargetGroup
 		if newName == oldName {
+			m.editInput.Blur()
 			m.form = formNone
 			return m, nil
 		}
@@ -946,15 +958,14 @@ func (m Model) handleEditGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		config.Save(m.configDir, m.cfg)
+		m.editInput.Blur()
 		m.form = formNone
 		return m, nil
 	}
-	v, c, ok := textEditKey(m.groupNameInput, m.formEditCursor, msg)
-	if ok {
-		m.groupNameInput = v
-		m.formEditCursor = c
-	}
-	return m, nil
+	var cmd tea.Cmd
+	m.editInput, cmd = m.editInput.Update(msg)
+	m.groupNameInput = m.editInput.Value()
+	return m, cmd
 }
 
 func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1314,7 +1325,10 @@ func (m Model) handleGlobalSettingsNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	case "enter":
 		m.formEditing = true
 		m.formEditBuf = m.formFields[m.formCursor]
-		m.formEditCursor = len([]rune(m.formFields[m.formCursor]))
+		if _, isCycle := fieldCycleOptions[m.formCursor]; isCycle {
+			return m, nil
+		}
+		return m, m.beginEdit(m.formFields[m.formCursor], fieldPlaceholders[m.formCursor], false)
 	case "i", "I":
 		m.shellInitScope = shellInitScopeGlobal
 		m.shellInitInput = m.cfg.GlobalShellInit
@@ -1337,6 +1351,9 @@ func (m Model) handleGlobalSettingsNavMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 
 func (m Model) handleGlobalSettingsEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+s" {
+		if _, isCycle := fieldCycleOptions[m.formCursor]; !isCycle {
+			m.endEdit(m.formCursor)
+		}
 		m.formEditing = false
 		opts, _ := parseSSHOptionsFromFields(m.formFields)
 		m.globalCfg.SSHOptions = opts
@@ -1353,21 +1370,18 @@ func (m Model) handleGlobalSettingsEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	switch msg.String() {
 	case "esc":
 		m.formFields[m.formCursor] = m.formEditBuf
+		m.editInput.Blur()
 		m.formEditing = false
 		return m, nil
 	case "enter":
+		m.endEdit(m.formCursor)
 		m.formEditing = false
 		return m, nil
 	}
-	if m.formCursor >= len(m.formFields) {
-		return m, nil
-	}
-	v, c, ok := textEditKey(m.formFields[m.formCursor], m.formEditCursor, msg)
-	if ok {
-		m.formFields[m.formCursor] = v
-		m.formEditCursor = c
-	}
-	return m, nil
+	var cmd tea.Cmd
+	m.editInput, cmd = m.editInput.Update(msg)
+	m.formFields[m.formCursor] = m.editInput.Value()
+	return m, cmd
 }
 
 func (m Model) saveForm() (tea.Model, tea.Cmd) {
