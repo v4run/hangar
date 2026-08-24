@@ -18,10 +18,17 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prevForm := m.form
 	prevShowHelp := m.showHelp
+	prevFormCursor := m.formCursor
 	newModel, cmd := m.updateInner(msg)
 	if nm, ok := newModel.(Model); ok {
 		if nm.form != prevForm || nm.showHelp != prevShowHelp {
 			nm.mainPaneOffset = 0
+			nm.mainPaneManual = false
+		}
+		if nm.formCursor != prevFormCursor {
+			// Focused field moved — re-arm auto-scroll so it snaps to the
+			// new field, overriding any prior manual PgUp / PgDn.
+			nm.mainPaneManual = false
 		}
 		return nm, cmd
 	}
@@ -205,6 +212,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mainPaneOffset < 0 {
 				m.mainPaneOffset = 0
 			}
+			m.mainPaneManual = true
 			return m, nil
 		case "pgdown":
 			step := m.height / 2
@@ -212,6 +220,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 				step = 1
 			}
 			m.mainPaneOffset += step
+			m.mainPaneManual = true
 			return m, nil
 		}
 

@@ -26,7 +26,7 @@ func (m Model) View() string {
 
 	sidebar := m.renderSidebar()
 	mainPane := m.renderMainPane()
-	mainPane = applyMainPaneScroll(mainPane, m.mainPaneOffset, contentHeight, m.formCanAutoScroll())
+	mainPane = applyMainPaneScroll(mainPane, m.mainPaneOffset, contentHeight, m.formCanAutoScroll() && !m.mainPaneManual)
 
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,

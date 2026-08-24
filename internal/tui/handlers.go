@@ -674,6 +674,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.mainPaneOffset > 0 {
 			m.mainPaneOffset--
 		}
+		m.mainPaneManual = true
 		return m, nil
 	case tea.MouseButtonWheelDown:
 		if inSidebar && m.form == formNone && !m.showHelp {
@@ -685,6 +686,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mainPaneOffset++
+		m.mainPaneManual = true
 		return m, nil
 	}
 
