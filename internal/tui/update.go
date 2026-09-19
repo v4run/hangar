@@ -179,27 +179,26 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Handle bracketed paste (bubbletea delivers pasted text as KeyMsg with Paste=true)
+		// Handle bracketed paste for the two states that don't route
+		// through the shared textinput.Model (tag editor + script form).
+		// Everything else falls through to its normal handler; bubbles'
+		// textinput accepts paste KeyMsg natively.
 		if tea.Key(msg).Paste {
 			pasted := string(tea.Key(msg).Runes)
-			if m.form == formAdd || m.form == formEdit || m.form == formGlobalSettings {
-				if m.formCursor < len(m.formFields) {
-					m.formFields[m.formCursor] += pasted
-				}
-			} else if m.form == formTag {
+			if m.form == formTag {
 				m.tagBuffer += pasted
-			} else if m.form == formAddGroup || m.form == formEditGroup {
-				m.groupNameInput += pasted
-			} else if m.form == formEditNotes {
-				m.notesInput += pasted
-			} else if m.form == formAddScript || m.form == formEditScript {
+				return m, nil
+			}
+			if m.form == formAddScript || m.form == formEditScript {
 				if m.scriptField == 0 {
 					m.scriptName += pasted
 				} else {
 					m.scriptCommand += pasted
 				}
+				return m, nil
 			}
-			return m, nil
+			// Fall through — editInput-backed forms + filter + shell-init
+			// pick the paste up from their normal handlers.
 		}
 		// Right-pane scrolling — intercepted before form dispatch so it
 		// works uniformly across forms, help, detail views.
