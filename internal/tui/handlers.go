@@ -760,8 +760,58 @@ func (m Model) handleNewChooser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.beginAddConnection()
 	case "d", "D":
 		m.beginAddDatabase()
+	case "p", "P":
+		m.form = formImportSSH
+		m.formError = ""
+		return m, m.beginEdit("", "paste ssh command…", false)
 	}
 	return m, nil
+}
+
+func (m Model) handleImportSSHInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.editInput.Blur()
+		m.form = formNone
+		return m, nil
+	case "enter":
+		cmd := strings.TrimSpace(m.editInput.Value())
+		if cmd == "" {
+			m.formError = "paste an ssh command first"
+			return m, nil
+		}
+		conn, err := sshauth.ParseSSHCommand(cmd)
+		if err != nil {
+			m.formError = err.Error()
+			return m, nil
+		}
+		m.editInput.Blur()
+		return m.enterAddConnectionFromImport(conn), nil
+	}
+	var cmd tea.Cmd
+	m.editInput, cmd = m.editInput.Update(msg)
+	return m, cmd
+}
+
+// enterAddConnectionFromImport switches to the add-connection form and
+// prefills every field the parser was able to fill in from the pasted
+// command. The user still hits ctrl+s to save, so they get one more
+// chance to name the connection / add a password / tweak fields.
+func (m Model) enterAddConnectionFromImport(conn *config.Connection) Model {
+	m.form = formAdd
+	m.formFields = make([]string, fieldAdvancedCount)
+	m.formFields[fieldName] = conn.Name
+	m.formFields[fieldHost] = conn.Host
+	m.formFields[fieldPort] = fmt.Sprintf("%d", conn.Port)
+	m.formFields[fieldUser] = conn.User
+	m.formFields[fieldKey] = conn.IdentityFile
+	m.formFields[fieldJump] = conn.JumpHost
+	m.formFields[fieldUseGlobalSettings] = "yes"
+	m.populateSSHOptionsFields(conn.SSHOptions, conn.UseGlobalSettings)
+	m.formCursor = 0
+	m.formEditing = false
+	m.formError = ""
+	return m
 }
 
 func (m *Model) beginAddConnection() {

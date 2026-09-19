@@ -122,6 +122,29 @@ Launch with `hangar` (no arguments).
 | `Enter`   | Run script on server    |
 | `h`       | Back to connection list |
 
+## Import from an SSH command
+
+Press `n` in the sidebar, then `p`, and paste a full `ssh` command
+(anything you'd run in your shell). Hangar parses it and opens the
+add-connection form prefilled with everything it recognised. Supported:
+
+- `-p PORT`, `-i KEY`, `-l USER`, `-J JUMP` and the `user@host` form
+- `-o KEY=VALUE` (`ForwardAgent`, `Compression`, `ServerAliveInterval`,
+  `ServerAliveCountMax`, `StrictHostKeyChecking`, `RequestTTY`,
+  `SendEnv`; unknown keys go into the `Extra` field verbatim)
+- `-L` / `-R` local / remote port forwardings (repeatable)
+- `-A` / `-a`, `-C`, `-t` / `-T` boolean flags
+- Any trailing remote command is ignored
+
+Example:
+
+```
+ssh -p 2222 -i ~/.ssh/id_ed25519 -o ForwardAgent=yes \
+    -L 8080:localhost:80 -J bastion@10.0.0.1 deploy@web-1.prod
+```
+
+Save from the add form (ctrl+s) once you've reviewed / named it.
+
 ## Groups
 
 Connections can be organized into collapsible groups. Use `J`/`K` on a group header to reorder groups manually; on a connection it swaps with the neighbor in the same group. Collapsed groups show the connection count.

@@ -203,7 +203,9 @@ func (m Model) renderStatusBar() string {
 	case m.form == formEditNotes:
 		hints = " enter:save  esc:cancel"
 	case m.form == formNewChooser:
-		hints = " c:connection  d:database  esc:cancel"
+		hints = " c:connection  d:database  p:paste-ssh-cmd  esc:cancel"
+	case m.form == formImportSSH:
+		hints = " enter:parse  esc:cancel"
 	case m.form == formAddDatabase || m.form == formEditDatabase:
 		if m.formEditing {
 			hints = " " + cursorStyle.Render("-- INSERT --") + "  h/l:toggle  enter:confirm  esc:discard  ctrl+s:save"
@@ -491,6 +493,8 @@ func (m Model) renderMainPane() string {
 		return m.renderDBForm()
 	case formDeleteDatabase:
 		return m.renderDeleteDatabaseConfirm()
+	case formImportSSH:
+		return m.renderImportSSHForm()
 	}
 
 	items := m.sidebarItems()
@@ -1024,8 +1028,25 @@ func (m Model) renderNewChooser() string {
 	b.WriteString("  " + cursorStyle.Render("c") + normalStyle.Render("   Connection — SSH bookmark"))
 	b.WriteString("\n")
 	b.WriteString("  " + cursorStyle.Render("d") + normalStyle.Render("   Database   — psql / mysql / redis / sqlite"))
+	b.WriteString("\n")
+	b.WriteString("  " + cursorStyle.Render("p") + normalStyle.Render("   Import     — paste an ssh command"))
 	b.WriteString("\n\n")
 	b.WriteString(dimStyle.Render("  esc to cancel"))
+	return b.String()
+}
+
+func (m Model) renderImportSSHForm() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Import SSH Command"))
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("  Paste a full ssh command (with -p / -i / -J / -o …)."))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("  Enter to parse and open the add-connection form."))
+	b.WriteString("\n\n")
+	b.WriteString(activeFieldStyle.Render("> ") + m.editInput.View())
+	if m.formError != "" {
+		b.WriteString("\n\n" + errorStyle.Render("  "+m.formError))
+	}
 	return b.String()
 }
 

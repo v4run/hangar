@@ -38,6 +38,7 @@ const (
 	formAddDatabase
 	formEditDatabase
 	formDeleteDatabase
+	formImportSSH
 )
 
 const (

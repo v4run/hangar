@@ -276,6 +276,9 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.form == formDeleteDatabase {
 			return m.handleDeleteDatabaseConfirm(msg)
 		}
+		if m.form == formImportSSH {
+			return m.handleImportSSHInput(msg)
+		}
 
 		// Visual mode
 		if m.visualMode {

@@ -25,7 +25,7 @@ func (m Model) renderHelp() string {
 			{"enter", "connect to selected host"},
 		}},
 		{"editing", [][2]string{
-			{"n", "new connection or database (chooser)"},
+			{"n", "new connection / database / paste-ssh-command (chooser)"},
 			{"e", "edit connection / database / group"},
 			{"d", "delete (with confirm)"},
 			{"t", "tag management"},
