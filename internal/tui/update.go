@@ -363,6 +363,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(items) && items[m.cursor].isGroup {
 				g := items[m.cursor].group
 				m.collapsed[g] = !m.collapsed[g]
+				m.saveCollapsed()
 			}
 			m.adjustSidebarViewport()
 			m.mainPaneOffset = 0

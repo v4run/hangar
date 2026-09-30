@@ -252,6 +252,15 @@ ssh_config_path: ~/.ssh/config
 auto_sync: true
 ```
 
+### UI State
+
+Stored in `~/.hangar/state.yaml`. Holds TUI state that survives restarts
+but isn't a setting, currently which sidebar groups are collapsed:
+
+```yaml
+collapsed_groups: [staging, archive]
+```
+
 ## Authentication
 
 When connecting, hangar tries in order:
@@ -262,6 +271,14 @@ When connecting, hangar tries in order:
 4. **Password prompt** (interactive fallback)
 
 Passwords stored via `hangar add --password` or the TUI form are saved in the system keychain and automatically provided to SSH.
+
+On Linux this needs a running [Secret Service](https://specifications.freedesktop.org/secret-service/)
+provider with an unlocked default keyring, such as gnome-keyring, KWallet
+or KeePassXC. Desktop environments normally set this up at login. On a
+bare window manager install `gnome-keyring` and create a default keyring
+once (for example `secret-tool store --label=probe hangar probe`, which
+prompts to create it). If no keyring is available, hangar saves the
+connection but reports `password not stored: keyring unavailable ...`.
 
 ## License
 

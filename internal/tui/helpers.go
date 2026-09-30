@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +13,21 @@ import (
 	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
 )
+
+// saveCollapsed persists the set of collapsed groups to state.yaml. Only
+// collapsed names are written (sorted, for a stable file) so the default
+// for any group stays "expanded". Failure is ignored: the in-memory state
+// is still correct for this run.
+func (m Model) saveCollapsed() {
+	var names []string
+	for g, c := range m.collapsed {
+		if c {
+			names = append(names, g)
+		}
+	}
+	sort.Strings(names)
+	_ = config.SaveState(m.configDir, &config.UIState{CollapsedGroups: names})
+}
 
 // sectionDivider renders a labeled horizontal rule for form sections.
 func sectionDivider(label string, width int) string {

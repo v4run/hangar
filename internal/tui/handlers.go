@@ -994,6 +994,7 @@ func (m Model) handleEditGroupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if !newNameExists {
 				m.collapsed[newName] = wasCollapsed
 			}
+			m.saveCollapsed()
 		}
 		// Migrate per-group shell-init snippet (only when newName had none).
 		if old, ok := m.cfg.GroupShellInit[oldName]; ok {
@@ -1027,6 +1028,7 @@ func (m Model) handleDeleteGroupConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		delete(m.collapsed, m.formTargetGroup)
+		m.saveCollapsed()
 		delete(m.cfg.GroupShellInit, m.formTargetGroup)
 		if idx := groupIndex(m.cfg.Groups, m.formTargetGroup); idx >= 0 {
 			m.cfg.Groups = append(m.cfg.Groups[:idx], m.cfg.Groups[idx+1:]...)

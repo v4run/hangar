@@ -222,13 +222,21 @@ func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDi
 	ti.Prompt = ""
 	ti.CharLimit = 0
 	ti.Width = 40
+	// Collapsed groups persist across runs; a missing or unreadable state
+	// file just means everything starts expanded.
+	collapsed := make(map[string]bool)
+	if st, err := config.LoadState(configDir); err == nil {
+		for _, g := range st.CollapsedGroups {
+			collapsed[g] = true
+		}
+	}
 	return Model{
 		cfg:              cfg,
 		globalCfg:        globalCfg,
 		configDir:        configDir,
 		focus:            focusSidebar,
 		sshConfigChanged: sshChanged,
-		collapsed:        make(map[string]bool),
+		collapsed:        collapsed,
 		cutConnections:   make(map[uuid.UUID]bool),
 		copyConnections:  make(map[uuid.UUID]bool),
 		runningScriptIdx: -1,
