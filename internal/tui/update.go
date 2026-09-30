@@ -367,6 +367,20 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.adjustSidebarViewport()
 			m.mainPaneOffset = 0
+		case "h", "left":
+			// Jump from a grouped item to its group header. Headers precede
+			// their members, so the nearest header above is the right one.
+			items := m.sidebarItems()
+			if m.cursor < len(items) && !items[m.cursor].isGroup {
+				for i := m.cursor - 1; i >= 0; i-- {
+					if items[i].isGroup {
+						m.cursor = i
+						m.adjustSidebarViewport()
+						m.mainPaneOffset = 0
+						break
+					}
+				}
+			}
 		case "l":
 			// Move focus to scripts pane
 			if m.selectedConnection() != nil {

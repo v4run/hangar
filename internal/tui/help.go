@@ -19,6 +19,7 @@ func (m Model) renderHelp() string {
 			{"j / ↓", "move down"},
 			{"k / ↑", "move up"},
 			{"space", "toggle group collapse"},
+			{"h / ←", "jump to group header"},
 			{"/", "filter connections"},
 			{"l", "focus scripts pane"},
 			{"h / esc", "back to sidebar"},

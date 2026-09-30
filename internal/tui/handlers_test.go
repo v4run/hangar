@@ -186,3 +186,39 @@ func TestDeleteGroupPersistsCollapsedState(t *testing.T) {
 		t.Fatalf("expected deleted group removed from state, got %v", st.CollapsedGroups)
 	}
 }
+
+func TestLeftJumpsToGroupHeader(t *testing.T) {
+	m := NewModel(groupedCfg("prod"), config.DefaultGlobalConfig(), t.TempDir(), false)
+	m.cursor = 1 // "prod-1", under the "prod" header at 0
+
+	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	m = got.(Model)
+	items := m.sidebarItems()
+	if m.cursor != 0 || !items[m.cursor].isGroup || items[m.cursor].group != "prod" {
+		t.Fatalf("expected cursor on prod header, got %d", m.cursor)
+	}
+}
+
+func TestLeftOnGroupHeaderDoesNothing(t *testing.T) {
+	m := NewModel(groupedCfg("prod"), config.DefaultGlobalConfig(), t.TempDir(), false)
+	m.cursor = 0
+
+	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	m = got.(Model)
+	if m.cursor != 0 {
+		t.Fatalf("cursor moved to %d", m.cursor)
+	}
+}
+
+func TestLeftOnUngroupedConnectionDoesNothing(t *testing.T) {
+	cfg := groupedCfg("prod")
+	_ = cfg.Add(config.Connection{Name: "loose", Host: "h", User: "u", Port: 22})
+	m := NewModel(cfg, config.DefaultGlobalConfig(), t.TempDir(), false)
+	m.cursor = 0 // ungrouped items are listed before groups
+
+	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	m = got.(Model)
+	if m.cursor != 0 {
+		t.Fatalf("cursor moved to %d", m.cursor)
+	}
+}
