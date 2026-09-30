@@ -40,7 +40,9 @@ func newAddCmd() *cobra.Command {
 			}
 
 			if password != "" {
-				config.SetPassword(args[0], password)
+				if err := config.SetPassword(args[0], password); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: password not stored: %v\n", err)
+				}
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Added connection %q\n", args[0])

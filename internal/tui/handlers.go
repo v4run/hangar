@@ -361,18 +361,16 @@ func (m Model) saveDBForm() (tea.Model, tea.Cmd) {
 		m.cfg.Groups = append(m.cfg.Groups, db.Group)
 	}
 
-	if pw := m.formFields[dbFieldPassword]; pw != "" && !config.IsCommandValue(pw) {
-		_ = config.SetPassword(db.ID.String(), pw)
-	} else {
-		_ = config.DeletePassword(db.ID.String())
-	}
-
 	if err := config.Save(m.configDir, m.cfg); err != nil {
 		m.formError = err.Error()
 		return m, nil
 	}
+	pwErr := storePassword(db.ID.String(), m.formFields[dbFieldPassword])
+
 	m.form = formNone
-	return m, nil
+	t, cmd := savedToast(name, pwErr)
+	m.activeToast = &t
+	return m, cmd
 }
 
 func (m Model) handleDeleteDatabaseConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1544,17 +1542,32 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 
 	// Save or delete password in keychain. $(...) commands are stored on
 	// the Connection itself (above) and must not also live in the keychain.
-	connKey := conn.ID.String()
-	if password != "" && !config.IsCommandValue(password) {
-		config.SetPassword(connKey, password)
-	} else {
-		config.DeletePassword(connKey)
-	}
+	pwErr := storePassword(conn.ID.String(), password)
 
 	m.form = formNone
 	m.formError = ""
 	m.jumpSuggestions = nil
-	t, cmd := showToast("saved "+name, toastOK)
+	t, cmd := savedToast(name, pwErr)
 	m.activeToast = &t
 	return m, cmd
+}
+
+// storePassword writes a literal password to the keychain, or clears the
+// keychain entry when the password is empty or a $(...) command (those are
+// stored on the config entry itself and must not also live in the keychain).
+func storePassword(key, password string) error {
+	if password != "" && !config.IsCommandValue(password) {
+		return config.SetPassword(key, password)
+	}
+	return config.DeletePassword(key)
+}
+
+// savedToast reports a successful config save. The config is on disk
+// either way, but a keychain failure would otherwise be silent — and the
+// symptom (password prompt on every connect) is far from the cause.
+func savedToast(name string, pwErr error) (toast, tea.Cmd) {
+	if pwErr != nil {
+		return showToast("saved "+name+", but password not stored: "+pwErr.Error(), toastErr)
+	}
+	return showToast("saved "+name, toastOK)
 }

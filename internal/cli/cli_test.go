@@ -2,9 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/zalando/go-keyring"
 )
 
 func TestListEmpty(t *testing.T) {
@@ -140,5 +144,23 @@ func TestSyncCommand(t *testing.T) {
 	listCmd.SetArgs([]string{"list", "--config", dir})
 	if err := listCmd.Execute(); err != nil {
 		t.Fatalf("list error: %v", err)
+	}
+}
+
+func TestAddWarnsWhenKeyringUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	keyring.MockInitWithError(errors.New("The name is not activatable"))
+	t.Cleanup(keyring.MockInit)
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"add", "server", "--host", "10.0.0.1", "--user", "root", "--password", "hunter2", "--config", dir})
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(stderr)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("add should still succeed when the keyring is unavailable: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "password not stored: keyring unavailable") {
+		t.Fatalf("expected keyring warning on stderr, got %q", stderr.String())
 	}
 }
