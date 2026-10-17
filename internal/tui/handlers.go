@@ -766,6 +766,79 @@ func (m Model) handleNewChooser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// launchSSH builds the ssh command for `resolved` and hands it to
+// tea.ExecProcess. Shared between the normal connect path and the
+// post-trust path after the host-key modal.
+func (m Model) launchSSH(resolved *config.Connection) (tea.Model, tea.Cmd) {
+	jumpHost := sshauth.ResolveJumpHost(m.cfg, resolved.JumpHost)
+	var opts *config.SSHOptions
+	if resolved.UseGlobalSettings == nil || *resolved.UseGlobalSettings {
+		mo := config.MergeSSHOptions(m.globalCfg.SSHOptions, resolved.SSHOptions)
+		opts = &mo
+	} else {
+		opts = resolved.SSHOptions
+	}
+	shellInit := sshauth.ComposeShellInit(m.cfg, resolved)
+	sshCmd, cleanup := sshauth.NewSSHCommand(resolved, jumpHost, opts, shellInit)
+	if rc := strings.TrimSpace(resolved.RemoteCommand); rc != "" {
+		escaped := strings.ReplaceAll(rc, "'", "'\\''")
+		remote := fmt.Sprintf("bash -l -c '%s'", escaped)
+		userHost := sshCmd.Args[len(sshCmd.Args)-1]
+		sshCmd.Args = append(sshCmd.Args[:len(sshCmd.Args)-1],
+			"-t", userHost, remote)
+	}
+	return m, tea.ExecProcess(sshCmd, func(err error) tea.Msg {
+		cleanup()
+		return sshExitMsg{err: err}
+	})
+}
+
+func (m Model) handleHostKeyPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Keys are still being scanned — only esc / q cancels in that window.
+	if len(m.pendingHostKeys) == 0 {
+		switch msg.String() {
+		case "esc", "q", "ctrl+c":
+			m.form = formNone
+			m.connectTarget = nil
+			m.pendingHostKeys = nil
+			m.pendingHostLabel = ""
+		}
+		return m, nil
+	}
+	switch msg.String() {
+	case "y", "Y", "enter":
+		if err := sshauth.TrustHost(m.pendingHostKeys); err != nil {
+			t, cmd := showToast("trust: "+err.Error(), toastErr)
+			m.activeToast = &t
+			m.form = formNone
+			m.connectTarget = nil
+			m.pendingHostKeys = nil
+			return m, cmd
+		}
+		target := m.connectTarget
+		m.form = formNone
+		m.pendingHostKeys = nil
+		m.pendingHostLabel = ""
+		if target == nil {
+			return m, nil
+		}
+		resolved, err := config.ResolveConnection(target)
+		if err != nil {
+			t, cmd := showToast("resolve: "+err.Error(), toastErr)
+			m.activeToast = &t
+			m.connectTarget = nil
+			return m, cmd
+		}
+		return m.launchSSH(resolved)
+	case "n", "N", "esc", "q", "ctrl+c":
+		m.form = formNone
+		m.connectTarget = nil
+		m.pendingHostKeys = nil
+		m.pendingHostLabel = ""
+	}
+	return m, nil
+}
+
 func (m Model) handleImportSSHInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -1501,6 +1574,7 @@ func (m Model) saveForm() (tea.Model, tea.Cmd) {
 		SSHOptions:        sshOpts,
 		UseGlobalSettings: useGlobal,
 		Password:          passwordCmd,
+		RemoteCommand:     strings.TrimSpace(m.formFields[fieldRemoteCommand]),
 	}
 
 	if m.form == formAdd {

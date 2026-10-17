@@ -206,6 +206,8 @@ func (m Model) renderStatusBar() string {
 		hints = " c:connection  d:database  p:paste-ssh-cmd  esc:cancel"
 	case m.form == formImportSSH:
 		hints = " enter:parse  esc:cancel"
+	case m.form == formHostKeyPrompt:
+		hints = " y:trust  n:cancel"
 	case m.form == formAddDatabase || m.form == formEditDatabase:
 		if m.formEditing {
 			hints = " " + cursorStyle.Render("-- INSERT --") + "  h/l:toggle  enter:confirm  esc:discard  ctrl+s:save"
@@ -495,6 +497,8 @@ func (m Model) renderMainPane() string {
 		return m.renderDeleteDatabaseConfirm()
 	case formImportSSH:
 		return m.renderImportSSHForm()
+	case formHostKeyPrompt:
+		return m.renderHostKeyPrompt()
 	}
 
 	items := m.sidebarItems()
@@ -1032,6 +1036,33 @@ func (m Model) renderNewChooser() string {
 	b.WriteString("  " + cursorStyle.Render("p") + normalStyle.Render("   Import     — paste an ssh command"))
 	b.WriteString("\n\n")
 	b.WriteString(dimStyle.Render("  esc to cancel"))
+	return b.String()
+}
+
+func (m Model) renderHostKeyPrompt() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Unknown Host"))
+	b.WriteString("\n\n")
+	b.WriteString(normalStyle.Render("  Connecting to ") + cursorStyle.Render(m.pendingHostLabel))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("  (first-time connection — not yet in known_hosts)"))
+	b.WriteString("\n\n")
+	if len(m.pendingHostKeys) == 0 {
+		b.WriteString(dimStyle.Render("  Fetching host key…"))
+		b.WriteString("\n\n")
+		b.WriteString(dimStyle.Render("  esc to cancel"))
+		return b.String()
+	}
+	b.WriteString(labelStyle.Render("  Fingerprints:"))
+	b.WriteString("\n")
+	for _, k := range m.pendingHostKeys {
+		b.WriteString("    " + dimStyle.Render(k.KeyType) + "  " + normalStyle.Render(k.Fingerprint))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(normalStyle.Render("  Trust this host and continue?"))
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("  y / enter: trust and connect   ·   n / esc: cancel"))
 	return b.String()
 }
 

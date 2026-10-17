@@ -77,30 +77,41 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case connectReadyMsg:
 		m.connecting = false
-		if m.connectTarget != nil {
-			c := m.connectTarget
-			resolved, err := config.ResolveConnection(c)
-			if err != nil {
-				t, cmd := showToast("resolve: "+err.Error(), toastErr)
-				m.activeToast = &t
-				m.connectTarget = nil
-				return m, cmd
-			}
-			jumpHost := sshauth.ResolveJumpHost(m.cfg, resolved.JumpHost)
-			var opts *config.SSHOptions
-			if resolved.UseGlobalSettings == nil || *resolved.UseGlobalSettings {
-				mo := config.MergeSSHOptions(m.globalCfg.SSHOptions, resolved.SSHOptions)
-				opts = &mo
-			} else {
-				opts = resolved.SSHOptions
-			}
-			shellInit := sshauth.ComposeShellInit(m.cfg, resolved)
-			cmd, cleanup := sshauth.NewSSHCommand(resolved, jumpHost, opts, shellInit)
-			return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-				cleanup()
-				return sshExitMsg{err: err}
-			})
+		if m.connectTarget == nil {
+			return m, nil
 		}
+		resolved, err := config.ResolveConnection(m.connectTarget)
+		if err != nil {
+			t, cmd := showToast("resolve: "+err.Error(), toastErr)
+			m.activeToast = &t
+			m.connectTarget = nil
+			return m, cmd
+		}
+		// First-time host → scan its key(s) and let the user confirm the
+		// fingerprint before we launch ssh. Known hosts bypass this and
+		// go straight to ssh (where askpass can inject the password).
+		if !sshauth.IsKnownHost(resolved.Host, resolved.Port) {
+			m.pendingHostLabel = fmt.Sprintf("%s@%s:%d", resolved.User, resolved.Host, resolved.Port)
+			m.form = formHostKeyPrompt
+			m.pendingHostKeys = nil
+			host, port := resolved.Host, resolved.Port
+			return m, func() tea.Msg {
+				keys, err := sshauth.ScanHost(host, port)
+				return hostKeyScannedMsg{keys: keys, err: err}
+			}
+		}
+		return m.launchSSH(resolved)
+
+	case hostKeyScannedMsg:
+		if msg.err != nil {
+			t, cmd := showToast("key scan: "+msg.err.Error(), toastErr)
+			m.activeToast = &t
+			m.form = formNone
+			m.connectTarget = nil
+			m.pendingHostKeys = nil
+			return m, cmd
+		}
+		m.pendingHostKeys = msg.keys
 		return m, nil
 
 	case sshExitMsg:
@@ -278,6 +289,9 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.form == formImportSSH {
 			return m.handleImportSSHInput(msg)
+		}
+		if m.form == formHostKeyPrompt {
+			return m.handleHostKeyPrompt(msg)
 		}
 
 		// Visual mode
@@ -473,6 +487,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.formFields[fieldGroup] = c.Group
 					m.formFields[fieldTags] = strings.Join(c.Tags, ", ")
 					m.formFields[fieldPassword] = existingPass
+					m.formFields[fieldRemoteCommand] = c.RemoteCommand
 					m.populateSSHOptionsFields(c.SSHOptions, c.UseGlobalSettings)
 					m.formCursor = 0
 					m.formError = ""

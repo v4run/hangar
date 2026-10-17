@@ -53,6 +53,12 @@ type Connection struct {
 	// passwords still live in the OS keychain — this field is empty for
 	// keychain-backed entries.
 	Password string `yaml:"password,omitempty"`
+
+	// RemoteCommand, when set, is run on the remote host immediately after
+	// ssh connects (via `ssh -t host 'bash -l -c "<cmd>"'`). Think of it as
+	// a default auto-launched Script: docker exec, tmux attach, k9s, htop.
+	// Shell init still applies.
+	RemoteCommand string `yaml:"remote_command,omitempty"`
 }
 
 // DBEngine identifies a supported database engine.

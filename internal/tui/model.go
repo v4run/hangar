@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/google/uuid"
 	"github.com/v4run/hangar/internal/config"
+	sshauth "github.com/v4run/hangar/internal/ssh"
 )
 
 type focus int
@@ -39,6 +40,7 @@ const (
 	formEditDatabase
 	formDeleteDatabase
 	formImportSSH
+	formHostKeyPrompt
 )
 
 const (
@@ -63,7 +65,8 @@ const (
 var fieldLabels = []string{"Name", "Host", "Port", "User", "Key", "Jump", "Group", "Tags", "Pass"}
 
 const (
-	fieldForwardAgent = fieldCount + iota
+	fieldRemoteCommand = fieldCount + iota
+	fieldForwardAgent
 	fieldCompression
 	fieldLocalForward
 	fieldRemoteForward
@@ -78,7 +81,7 @@ const (
 )
 
 var advancedFieldLabels = []string{
-	"FwdAgent", "Compress", "LocalFwd", "RemoteFwd",
+	"RemoteCmd", "FwdAgent", "Compress", "LocalFwd", "RemoteFwd",
 	"Alive", "AliveMax", "HostKey", "TTY",
 	"Envs", "Extra", "UseGlobal",
 }
@@ -95,6 +98,7 @@ var fieldCycleOptions = map[int][]string{
 
 // fieldPlaceholders shows example values for free text advanced fields.
 var fieldPlaceholders = map[int]string{
+	fieldRemoteCommand:       "docker exec -it web bash   (run on the remote host)",
 	fieldLocalForward:        "8080:localhost:80, 9090:localhost:90",
 	fieldRemoteForward:       "3000:localhost:3000",
 	fieldServerAliveInterval: "60",
@@ -206,6 +210,8 @@ type Model struct {
 	mainPaneOffset   int                 // vertical scroll offset for the right pane
 	mainPaneManual   bool                // user drove scroll; suppresses auto-focus snap
 	editInput        textinput.Model     // shared input widget used when a text field is being edited
+	pendingHostKeys  []sshauth.HostKey   // keys returned by ssh-keyscan while awaiting trust confirmation
+	pendingHostLabel string              // "user@host:port" shown in the host-key modal
 }
 
 type sshExitMsg struct{ err error }
@@ -216,6 +222,11 @@ type dbExitMsg struct {
 }
 
 type connectReadyMsg struct{}
+
+type hostKeyScannedMsg struct {
+	keys []sshauth.HostKey
+	err  error
+}
 
 func NewModel(cfg *config.HangarConfig, globalCfg *config.GlobalConfig, configDir string, sshChanged bool) Model {
 	ti := textinput.New()
