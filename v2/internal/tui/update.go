@@ -664,20 +664,30 @@ func (m *Model) cursorToDatabase(id uuid.UUID) {
 }
 
 // cursorToGroup moves the sidebar cursor onto the given group row.
-// Expands any collapsed ancestors so the group is visible.
+// Expands any collapsed ANCESTORS so the group is visible but
+// leaves the group's own open/close state alone — jumping to a
+// group shouldn't silently unfold its subtree.
 func (m *Model) cursorToGroup(id uuid.UUID) {
-	// Expand ancestors.
 	byID := make(map[uuid.UUID]*m2GroupRef, len(m.cfg.Groups))
 	for i := range m.cfg.Groups {
 		byID[m.cfg.Groups[i].ID] = &m2GroupRef{p: m.cfg.Groups[i].Parent}
 	}
-	for cur := id; cur != uuid.Nil; {
-		g, ok := byID[cur]
-		if !ok {
-			break
+	changed := false
+	if start, ok := byID[id]; ok {
+		for cur := start.p; cur != uuid.Nil; {
+			g, ok := byID[cur]
+			if !ok {
+				break
+			}
+			if m.collapsed[cur] {
+				delete(m.collapsed, cur)
+				changed = true
+			}
+			cur = g.p
 		}
-		delete(m.collapsed, cur)
-		cur = g.p
+	}
+	if changed {
+		m.persistCollapsed()
 	}
 	m.rebuildRows()
 	for i, r := range m.rows {
