@@ -39,11 +39,19 @@ func (m Model) View() string {
 	}
 
 	header := m.renderHeader()
-	sidebar := theme.Pane.
+	// Highlight whichever pane holds focus by swapping its border
+	// color — lazygit-style focus indicator.
+	sidebarStyle, rightStyle := theme.Pane, theme.Pane
+	if m.paneFocus == focusDetail {
+		rightStyle = theme.PaneFocused
+	} else {
+		sidebarStyle = theme.PaneFocused
+	}
+	sidebar := sidebarStyle.
 		Width(sidebarW - 2).
 		Height(innerH).
 		Render(m.renderSidebar(sidebarW-4, innerH))
-	right := theme.Pane.
+	right := rightStyle.
 		Width(rightW - 2).
 		Height(innerH).
 		Render(m.renderDetail(rightW-4, innerH))
@@ -377,11 +385,7 @@ func (m Model) renderTabs(w int) string {
 		}
 	}
 	bar := strings.Join(parts, theme.Hint.Render("   "))
-	hint := theme.Hint.Render("  (tab / shift+tab)")
-	if m.paneFocus == focusDetail {
-		hint = theme.Cursor.Render("  ◆ detail focused ") + theme.Hint.Render("(esc / h to leave)")
-	}
-	return bar + hint
+	return bar + theme.Hint.Render("  (tab / shift+tab)")
 }
 
 func (m Model) renderDetailsTab(w int) string {
