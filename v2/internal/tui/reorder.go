@@ -17,25 +17,34 @@ func (m *Model) moveSelectedBy(dir int) {
 		return
 	}
 	r := m.selectedRow()
+	// Capture IDs BEFORE the swap — the row's *config.Group /
+	// *config.Connection / *config.Database pointers index into the
+	// backing slice, and after a swap they point at whatever was
+	// moved INTO that slot (not the item we moved).
+	var kind rowKind
+	var id uuid.UUID
 	switch {
 	case r.conn != nil:
+		kind, id = rowConnection, r.conn.ID
 		m.swapConn(r.conn, dir)
 	case r.db != nil:
+		kind, id = rowDatabase, r.db.ID
 		m.swapDB(r.db, dir)
 	case r.group != nil:
+		kind, id = rowGroup, r.group.ID
 		m.swapGroup(r.group, dir)
 	default:
 		return
 	}
 	_ = config.Save(m.cfgDir, m.cfg)
 	m.rebuildRows()
-	switch {
-	case r.conn != nil:
-		m.cursorToConnection(r.conn.ID)
-	case r.db != nil:
-		m.cursorToDatabase(r.db.ID)
-	case r.group != nil:
-		m.cursorToGroup(r.group.ID)
+	switch kind {
+	case rowConnection:
+		m.cursorToConnection(id)
+	case rowDatabase:
+		m.cursorToDatabase(id)
+	case rowGroup:
+		m.cursorToGroup(id)
 	}
 }
 
