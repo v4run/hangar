@@ -1,2 +1,3 @@
 .worktrees/
-hangar
+# Root-level compiled binary only; was matching v2/cmd/hangar/ too.
+/hangar
