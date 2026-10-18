@@ -188,7 +188,16 @@ var connFieldHints = []string{
 }
 
 func (m *Model) openAddConnectionPalette() tea.Cmd {
-	return m.openConnectionPalette(PaletteAddConnection, "New Connection", nil)
+	cmd := m.openConnectionPalette(PaletteAddConnection, "New Connection", nil)
+	// Prefill the Group field so a new connection drops into the
+	// currently-selected group by default.
+	if prefix := m.cursorGroupPathPrefix(); prefix != "" {
+		// Strip the trailing slash — the Group field holds a path,
+		// not a parent-of path.
+		m.palette.fields[connFieldGroup].input.SetValue(strings.TrimRight(prefix, "/"))
+		m.palette.fields[connFieldGroup].input.CursorEnd()
+	}
+	return cmd
 }
 
 func (m *Model) openEditConnectionPalette(c *config.Connection) tea.Cmd {
@@ -281,7 +290,38 @@ var groupFieldHints = []string{
 }
 
 func (m *Model) openAddGroupPalette() tea.Cmd {
-	return m.openGroupPalette(PaletteAddGroup, "New Group", nil)
+	cmd := m.openGroupPalette(PaletteAddGroup, "New Group", nil)
+	// Prefill the Path field with the selected group's path (or the
+	// group containing the selected connection) + "/" so adding a
+	// nested group is just typing the leaf name.
+	if prefix := m.cursorGroupPathPrefix(); prefix != "" {
+		m.palette.fields[groupFieldPath].input.SetValue(prefix)
+		m.palette.fields[groupFieldPath].input.CursorEnd()
+	}
+	return cmd
+}
+
+// cursorGroupPathPrefix returns the group path (ending in "/") of
+// the currently-selected row, if any — so new-group / new-connection
+// forms can prefill with "prod/us-east/". Returns "" when nothing
+// useful is selected.
+func (m *Model) cursorGroupPathPrefix() string {
+	if g := m.selectedGroup(); g != nil {
+		if path := config.GroupPath(m.cfg, g.ID); path != "" {
+			return path + "/"
+		}
+	}
+	if c := m.selectedConnection(); c != nil && c.Group != uuid.Nil {
+		if path := config.GroupPath(m.cfg, c.Group); path != "" {
+			return path + "/"
+		}
+	}
+	if d := m.selectedDatabase(); d != nil && d.Group != uuid.Nil {
+		if path := config.GroupPath(m.cfg, d.Group); path != "" {
+			return path + "/"
+		}
+	}
+	return ""
 }
 
 func (m *Model) openEditGroupPalette(g *config.Group) tea.Cmd {
