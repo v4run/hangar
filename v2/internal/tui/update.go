@@ -317,13 +317,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(msg, m.keymap.Right):
-		if r := m.selectedRow(); r.kind == rowSectionHeader && r.group != nil && r.group.Name == "Recent" {
-			if m.recentCollapsed {
-				m.recentCollapsed = false
-				m.rebuildRows()
-			}
-			return m, nil
-		}
 		if g := m.selectedGroup(); g != nil {
 			if m.collapsed[g.ID] {
 				m.collapsed[g.ID] = false
@@ -345,13 +338,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keymap.Left):
 		if m.paneFocus == focusDetail {
 			m.paneFocus = focusSidebar
-			return m, nil
-		}
-		if r := m.selectedRow(); r.kind == rowSectionHeader && r.group != nil && r.group.Name == "Recent" {
-			if !m.recentCollapsed {
-				m.recentCollapsed = true
-				m.rebuildRows()
-			}
 			return m, nil
 		}
 		if g := m.selectedGroup(); g != nil && !m.collapsed[g.ID] {
