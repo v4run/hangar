@@ -98,13 +98,15 @@ func (m *Model) rebuildRows() {
 		top := m.state.TopRecent(5)
 		if len(top) > 0 {
 			m.rows = append(m.rows, row{kind: rowSectionHeader, group: &config.Group{Name: "Recent"}})
-			for _, id := range top {
-				if c := findConnByID(cfg, id); c != nil {
-					m.rows = append(m.rows, row{kind: rowConnection, depth: 1, conn: c})
-					continue
-				}
-				if d := findDBByID(cfg, id); d != nil {
-					m.rows = append(m.rows, row{kind: rowDatabase, depth: 1, db: d})
+			if !m.recentCollapsed {
+				for _, id := range top {
+					if c := findConnByID(cfg, id); c != nil {
+						m.rows = append(m.rows, row{kind: rowConnection, depth: 1, conn: c})
+						continue
+					}
+					if d := findDBByID(cfg, id); d != nil {
+						m.rows = append(m.rows, row{kind: rowDatabase, depth: 1, db: d})
+					}
 				}
 			}
 		}

@@ -151,7 +151,15 @@ func (m Model) renderSidebar(w, h int) string {
 
 func (m Model) renderRow(r row, selected bool, width int) string {
 	if r.kind == rowSectionHeader {
-		return theme.Label.Render("── " + r.group.Name + " ─")
+		chev := "▾"
+		if r.group.Name == "Recent" && m.recentCollapsed {
+			chev = "▸"
+		}
+		marker := "  "
+		if selected {
+			marker = theme.Selected.Render("› ")
+		}
+		return marker + theme.Label.Render(chev+" "+r.group.Name)
 	}
 	indent := strings.Repeat("  ", minInt(r.depth, 4))
 	var icon, name string

@@ -22,6 +22,18 @@ import (
 func BuildArgs(cfg *config.Config, r *config.Resolved) []string {
 	c := r.Connection
 	args := []string{}
+	// Safety rails: fail fast on a bad config instead of hanging the
+	// TUI in a retry loop. Both are overridable by the user via
+	// SSHOptions.ExtraOptions.
+	if !optionSet(r, "ConnectTimeout") {
+		args = append(args, "-o", "ConnectTimeout=10")
+	}
+	if !optionSet(r, "NumberOfPasswordPrompts") {
+		args = append(args, "-o", "NumberOfPasswordPrompts=1")
+	}
+	if !optionSet(r, "ConnectionAttempts") {
+		args = append(args, "-o", "ConnectionAttempts=1")
+	}
 	if r.SSHOptions != nil {
 		o := r.SSHOptions
 		if o.ForwardAgent != nil {
@@ -131,6 +143,21 @@ func buildRemoteWrapper(shellInit, remote string) string {
 
 func escapeSingle(s string) string {
 	return strings.ReplaceAll(s, "'", `'\''`)
+}
+
+// optionSet reports whether the resolved SSHOptions already carries
+// `key` either as a dedicated field or in ExtraOptions — used to
+// avoid stepping on a user-set value when we inject safety rails.
+func optionSet(r *config.Resolved, key string) bool {
+	if r == nil || r.SSHOptions == nil {
+		return false
+	}
+	switch key {
+	case "ConnectTimeout", "NumberOfPasswordPrompts", "ConnectionAttempts":
+		_, ok := r.SSHOptions.ExtraOptions[key]
+		return ok
+	}
+	return false
 }
 
 func boolYN(b bool) string {

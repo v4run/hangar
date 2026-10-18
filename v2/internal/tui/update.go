@@ -274,14 +274,41 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(msg, m.keymap.Right):
-		if g := m.selectedGroup(); g != nil && m.collapsed[g.ID] {
-			m.collapsed[g.ID] = false
-			m.rebuildRows()
+		if r := m.selectedRow(); r.kind == rowSectionHeader && r.group != nil && r.group.Name == "Recent" {
+			if m.recentCollapsed {
+				m.recentCollapsed = false
+				m.rebuildRows()
+			}
+			return m, nil
+		}
+		if g := m.selectedGroup(); g != nil {
+			if m.collapsed[g.ID] {
+				m.collapsed[g.ID] = false
+				m.rebuildRows()
+			}
+			return m, nil
+		}
+		// Connection / database row — focus the detail pane so the
+		// user can tab through its tabs and act on items.
+		if c := m.selectedConnection(); c != nil {
+			m.paneFocus = focusDetail
+			return m, nil
+		}
+		if d := m.selectedDatabase(); d != nil {
+			m.paneFocus = focusDetail
+			_ = d
 			return m, nil
 		}
 	case key.Matches(msg, m.keymap.Left):
 		if m.paneFocus == focusDetail {
 			m.paneFocus = focusSidebar
+			return m, nil
+		}
+		if r := m.selectedRow(); r.kind == rowSectionHeader && r.group != nil && r.group.Name == "Recent" {
+			if !m.recentCollapsed {
+				m.recentCollapsed = true
+				m.rebuildRows()
+			}
 			return m, nil
 		}
 		if g := m.selectedGroup(); g != nil && !m.collapsed[g.ID] {
@@ -313,6 +340,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case key.Matches(msg, m.keymap.Enter):
+		if r := m.selectedRow(); r.kind == rowSectionHeader && r.group != nil && r.group.Name == "Recent" {
+			m.recentCollapsed = !m.recentCollapsed
+			m.rebuildRows()
+			return m, nil
+		}
 		if m.paneFocus == focusDetail && m.tab == TabScripts {
 			if c := m.selectedConnection(); c != nil {
 				r := config.Resolve(m.cfg, c)
@@ -398,6 +430,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.openDeleteGroupPalette(g)
 		}
 	case key.Matches(msg, m.keymap.ToggleOpen):
+		if r := m.selectedRow(); r.kind == rowSectionHeader && r.group != nil && r.group.Name == "Recent" {
+			m.recentCollapsed = !m.recentCollapsed
+			m.rebuildRows()
+			return m, nil
+		}
 		if g := m.selectedGroup(); g != nil {
 			m.collapsed[g.ID] = !m.collapsed[g.ID]
 			m.rebuildRows()

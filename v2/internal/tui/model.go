@@ -111,10 +111,11 @@ type Model struct {
 	// Sidebar: flattened view of the group tree in render order,
 	// with expand/collapse state keyed by group ID (`uuid.Nil` for
 	// "ungrouped" section).
-	rows      []row
-	collapsed map[uuid.UUID]bool
-	cursor    int  // index into `rows`
-	offset    int  // top row visible in sidebar viewport
+	rows            []row
+	collapsed       map[uuid.UUID]bool
+	cursor          int  // index into `rows`
+	offset          int  // top row visible in sidebar viewport
+	recentCollapsed bool // Recent frecency section — collapsed or not
 
 	// Current detail tab + per-tab item cursor + which pane owns
 	// keyboard focus (sidebar list vs the active detail tab).
