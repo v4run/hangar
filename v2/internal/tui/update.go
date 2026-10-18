@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -38,10 +40,48 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 type toastClearMsg struct{ at time.Time }
 
 func (m *Model) setToast(text string, kind toastKind) {
+	// Toasts live on the status bar — one visible line. Collapse any
+	// embedded newlines (the ssh-keyscan error path can emit several
+	// `getaddrinfo … not known` repeats) and strip adjacent dupes
+	// so the status bar never wraps.
+	text = flattenToast(text)
 	m.toast = text
 	m.toastKind = kind
 	m.toastGone = time.Now().Add(3 * time.Second)
 }
+
+func flattenToast(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	parts := strings.Split(s, "\n")
+	// Keep only non-empty lines, trimmed.
+	trimmed := parts[:0]
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		trimmed = append(trimmed, p)
+	}
+	if len(trimmed) == 0 {
+		return ""
+	}
+	// A toast is one glance on the status bar — show the first line
+	// only. If the error was multi-line (ssh-keyscan's 4-copy
+	// `getaddrinfo` barrage is the motivating example) append a
+	// `(+N more)` tag so the user knows more detail was dropped.
+	head := trimmed[0]
+	if n := len(trimmed) - 1; n > 0 {
+		head = head + " (+" + strconv.Itoa(n) + " more)"
+	}
+	// Hard cap so a huge error doesn't eat the hints strip. Keep 3
+	// bytes for the ellipsis so the result fits exactly.
+	const max = 120
+	if len(head) > max {
+		head = head[:max-3] + "..."
+	}
+	return head
+}
+
 
 func (m Model) clearToastCmd() tea.Cmd {
 	target := m.toastGone
@@ -71,7 +111,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast("key scan: "+msg.err.Error(), toastErr)
 			m.closePalette()
 			m.pendingConn = nil
-			return m, m.clearToastCmd()
+			return m, tea.Batch(tea.ClearScreen, m.clearToastCmd())
 		}
 		m.pendingKeys = msg.keys
 		m.palette.message = ""

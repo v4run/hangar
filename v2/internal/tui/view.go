@@ -469,20 +469,32 @@ func (m Model) renderStatusBar() string {
 	default:
 		chip = theme.ChipBrowse.Render("BROWSE")
 	}
+	// Reserve budgets so neither hints nor toast can push past the
+	// terminal width (the status bar MUST stay single-line — if it
+	// wraps, the whole TUI scrolls up by that many rows and the
+	// header leaves the viewport).
+	chipW := lipgloss.Width(chip)
+	// Toast gets up to half the row; hints get the rest; a 2-cell
+	// margin on each side plus 1 for the separating gap.
+	toastBudget := (m.width - chipW - 4) / 2
+	if toastBudget < 0 {
+		toastBudget = 0
+	}
 	right := ""
 	if m.toast != "" {
+		raw := m.toast
+		if lipgloss.Width(raw) > toastBudget {
+			raw = truncate(raw, toastBudget)
+		}
 		switch m.toastKind {
 		case toastErr:
-			right = theme.ErrorText.Render(m.toast)
+			right = theme.ErrorText.Render(raw)
 		case toastOK:
-			right = theme.OKText.Render(m.toast)
+			right = theme.OKText.Render(raw)
 		default:
-			right = theme.Dim.Render(m.toast)
+			right = theme.Dim.Render(raw)
 		}
 	}
-	// Reserve `rightSlot` columns for the toast so hints never
-	// overlap it. If no toast is active that space is just empty.
-	chipW := lipgloss.Width(chip)
 	rightW := lipgloss.Width(right)
 	hintsBudget := m.width - chipW - rightW - 4
 	if hintsBudget < 10 {
