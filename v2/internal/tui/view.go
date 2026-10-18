@@ -722,7 +722,7 @@ func (m Model) renderCmdBar() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(theme.Dim.Render("  tab: autocomplete   enter: run   esc: cancel"))
-	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(14, 20)), m.modalWidth(60, 100))
+	return paddedBox(b.String(), m.modalWidth(60, 100))
 }
 
 func (m Model) renderLeader() string {
@@ -756,7 +756,7 @@ func (m Model) renderLeader() string {
 		b.WriteString("\n")
 	}
 	b.WriteString(theme.Dim.Render("  esc  cancel"))
-	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(12, 20)), m.modalWidth(50, 70))
+	return paddedBox(b.String(), m.modalWidth(50, 70))
 }
 
 func (m Model) renderPicker() string {
@@ -862,7 +862,7 @@ func (m Model) renderPicker() string {
 	b.WriteString(row.String())
 	b.WriteString("\n")
 	b.WriteString(theme.Dim.Render("  ↑/↓: pick   enter: select   esc: cancel"))
-	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(16, 24)), width)
+	return paddedBox(b.String(), width)
 }
 
 // padRight pads s with trailing spaces so its DISPLAY width is w.
@@ -1016,7 +1016,7 @@ func (m Model) renderPalette() string {
 		b.WriteString("\n\n")
 		b.WriteString(theme.ErrorText.Render("  " + m.palette.err))
 	}
-	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(18, 30)), m.modalWidth(80, 120))
+	return paddedBox(b.String(), m.modalWidth(80, 120))
 }
 
 // helpBodyLines returns the full help body as one line per entry.
@@ -1095,7 +1095,7 @@ func (m Model) renderHelp() string {
 		b.WriteString("\n")
 	}
 	b.WriteString(theme.Dim.Render("  esc / ? to close"))
-	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(18, 30)), m.modalWidth(72, 110))
+	return paddedBox(b.String(), m.modalWidth(72, 110))
 }
 
 // --- helpers ---
@@ -1183,16 +1183,6 @@ func (m Model) modalHeight(min, max int) int {
 	return target
 }
 
-// padBoxToHeight ensures `s` is at least `h` lines tall by
-// appending blank lines; lipgloss.Pane.Height would do the same
-// but we're mixing styled builders so the explicit pad is simpler.
-func padBoxToHeight(s string, h int) string {
-	lines := strings.Count(s, "\n") + 1
-	if lines >= h {
-		return s
-	}
-	return s + strings.Repeat("\n", h-lines)
-}
 
 func paddedBox(s string, width int) string {
 	return theme.Pane.Width(width).Render(s)
