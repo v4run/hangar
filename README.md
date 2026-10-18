@@ -2,6 +2,20 @@
 
 A terminal SSH connection manager with a TUI dashboard. Built in Go.
 
+> **🚧 v2 preview is available.** A full UX redesign — multi-level
+> group inheritance, `space` leader menu, `:` command bar, fuzzy
+> picker with live preview, floating palettes, host-key confirm
+> modal — lives at `v2/`. Install:
+>
+> ```
+> go install github.com/v4run/hangar/v2/cmd/hangar@latest
+> ```
+>
+> v2 reads your existing v1 config and migrates it to
+> `~/.hangar/v2/config.yaml` on first run; your v1 config is never
+> modified. See [docs/plans/2026-10-18-tui-redesign.md](docs/plans/2026-10-18-tui-redesign.md)
+> for the design and `v2/` for the code.
+
 ## Features
 
 - **TUI Dashboard** -- interactive terminal UI with connection browser and fuzzy filter

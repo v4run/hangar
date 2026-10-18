@@ -67,6 +67,8 @@ const (
 	PaletteAddDatabase
 	PaletteEditDatabase
 	PaletteDeleteDatabase
+	PaletteDeleteGroup
+	PaletteShellInit
 )
 
 // Tab names a detail-pane tab.
@@ -129,8 +131,9 @@ type Model struct {
 
 	// Palette state.
 	palette          paletteState
-	paletteOpts      *config.SSHOptions // SSHOptions carried into add-conn from ssh-import
-	paletteScriptIdx int                // -1 = new script, else index into Scripts
+	paletteOpts       *config.SSHOptions // SSHOptions carried into add-conn from ssh-import
+	paletteScriptIdx  int                // -1 = new script, else index into Scripts
+	shellInitScopeSel shellInitScope     // which scope the current ShellInit palette targets
 
 	// Connection target of the current connect intent (host-key
 	// confirm path).

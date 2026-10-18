@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -258,7 +259,150 @@ func (m *Model) submitPalette() (tea.Model, tea.Cmd) {
 		return m.saveDatabase(m.palette.target)
 	case PaletteDeleteDatabase:
 		return m.deleteDatabase(m.palette.target)
+	case PaletteDeleteGroup:
+		return m.deleteGroup(m.palette.target)
+	case PaletteShellInit:
+		return m.saveShellInit()
 	}
+	return m, nil
+}
+
+func (m *Model) openDeleteGroupPalette(g *config.Group) tea.Cmd {
+	kids := 0
+	for i := range m.cfg.Groups {
+		if m.cfg.Groups[i].Parent == g.ID {
+			kids++
+		}
+	}
+	conns := 0
+	for i := range m.cfg.Connections {
+		if m.cfg.Connections[i].Group == g.ID {
+			conns++
+		}
+	}
+	msg := fmt.Sprintf("Delete group %q? %d subgroup(s) and %d connection(s) will be re-parented to its parent. (y/n)",
+		g.Name, kids, conns)
+	m.palette = paletteState{
+		kind:    PaletteDeleteGroup,
+		title:   "Delete group",
+		message: msg,
+		target:  g.ID,
+	}
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return nil
+}
+
+func (m *Model) deleteGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
+	var parent uuid.UUID
+	for i := range m.cfg.Groups {
+		if m.cfg.Groups[i].ID == id {
+			parent = m.cfg.Groups[i].Parent
+			break
+		}
+	}
+	// Re-parent children + connections + databases to this group's
+	// parent (preserves the user's work — nothing is orphaned).
+	for i := range m.cfg.Groups {
+		if m.cfg.Groups[i].Parent == id {
+			m.cfg.Groups[i].Parent = parent
+		}
+	}
+	for i := range m.cfg.Connections {
+		if m.cfg.Connections[i].Group == id {
+			m.cfg.Connections[i].Group = parent
+		}
+	}
+	for i := range m.cfg.Databases {
+		if m.cfg.Databases[i].Group == id {
+			m.cfg.Databases[i].Group = parent
+		}
+	}
+	// Remove the group row itself.
+	for i := range m.cfg.Groups {
+		if m.cfg.Groups[i].ID == id {
+			name := m.cfg.Groups[i].Name
+			m.cfg.Groups = append(m.cfg.Groups[:i], m.cfg.Groups[i+1:]...)
+			if err := config.Save(m.cfgDir, m.cfg); err != nil {
+				m.palette.err = err.Error()
+				return m, nil
+			}
+			m.rebuildRows()
+			m.closePalette()
+			m.setToast("deleted group "+name, toastOK)
+			return m, nil
+		}
+	}
+	m.closePalette()
+	return m, nil
+}
+
+// --- shell init multi-line editor ---
+
+func (m *Model) openShellInitPalette(scope shellInitScope, target uuid.UUID, initial string) tea.Cmd {
+	ta := textinput.New() // bubbles/textinput handles single-line only; we fake multi-line by writing \n through a wider input.
+	ta.Prompt = ""
+	ta.Placeholder = "shell init (bash lines; use ⌥⏎ or paste for newlines)"
+	ta.CharLimit = 0
+	ta.Width = 80
+	ta.SetValue(initial)
+	ta.CursorEnd()
+	m.palette = paletteState{
+		kind:   PaletteShellInit,
+		title:  shellInitTitle(scope),
+		fields: []paletteField{{label: "ShellInit", input: ta}},
+		target: target,
+	}
+	m.shellInitScopeSel = scope
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return m.focusField(0)
+}
+
+type shellInitScope int
+
+const (
+	shellInitScopeConnection shellInitScope = iota
+	shellInitScopeGroup
+	shellInitScopeGlobal
+)
+
+func shellInitTitle(s shellInitScope) string {
+	switch s {
+	case shellInitScopeGroup:
+		return "Group shell init"
+	case shellInitScopeGlobal:
+		return "Global shell init"
+	}
+	return "Connection shell init"
+}
+
+func (m *Model) saveShellInit() (tea.Model, tea.Cmd) {
+	val := m.palette.fields[0].input.Value()
+	switch m.shellInitScopeSel {
+	case shellInitScopeGlobal:
+		m.cfg.ShellInit = val
+	case shellInitScopeGroup:
+		for i := range m.cfg.Groups {
+			if m.cfg.Groups[i].ID == m.palette.target {
+				m.cfg.Groups[i].ShellInit = val
+				break
+			}
+		}
+	default:
+		for i := range m.cfg.Connections {
+			if m.cfg.Connections[i].ID == m.palette.target {
+				m.cfg.Connections[i].ShellInit = val
+				break
+			}
+		}
+	}
+	if err := config.Save(m.cfgDir, m.cfg); err != nil {
+		m.palette.err = err.Error()
+		return m, nil
+	}
+	m.closePalette()
+	m.setToast("shell init saved", toastOK)
 	return m, nil
 }
 

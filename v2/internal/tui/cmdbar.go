@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/google/uuid"
 )
 
 // Command is one registered `:` command.
@@ -29,6 +30,10 @@ func (m *Model) commands() []Command {
 		{"import", "paste an ssh command to prefill a new connection", (*Model).cmdImport},
 		{"addscript", "add a script to the selected connection", (*Model).cmdAddScript},
 		{"run", "run a script on the selected connection", (*Model).cmdRunScript},
+		{"shellinit", "edit shell init (connection scope)", (*Model).cmdShellInit},
+		{"groupinit", "edit shell init (selected group scope)", (*Model).cmdGroupShellInit},
+		{"globalinit", "edit shell init (global scope)", (*Model).cmdGlobalShellInit},
+		{"delgroup", "delete the selected group (re-parents its contents)", (*Model).cmdDeleteGroup},
 		{"help", "show help overlay", (*Model).cmdHelp},
 		{"quit", "quit", (*Model).cmdQuit},
 	}
@@ -166,6 +171,37 @@ func (m *Model) cmdAddScript(_ string) tea.Cmd {
 	return nil
 }
 func (m *Model) cmdRunScript(_ string) tea.Cmd { return m.openScriptRunner() }
+
+func (m *Model) cmdShellInit(_ string) tea.Cmd {
+	if c := m.selectedConnection(); c != nil {
+		return m.openShellInitPalette(shellInitScopeConnection, c.ID, c.ShellInit)
+	}
+	m.setToast("no connection under cursor", toastErr)
+	return nil
+}
+func (m *Model) cmdGroupShellInit(_ string) tea.Cmd {
+	g := m.selectedGroup()
+	if g == nil {
+		if c := m.selectedConnection(); c != nil && c.Group != uuid.Nil {
+			g = m.groupByID(c.Group)
+		}
+	}
+	if g == nil {
+		m.setToast("no group under cursor", toastErr)
+		return nil
+	}
+	return m.openShellInitPalette(shellInitScopeGroup, g.ID, g.ShellInit)
+}
+func (m *Model) cmdGlobalShellInit(_ string) tea.Cmd {
+	return m.openShellInitPalette(shellInitScopeGlobal, uuid.Nil, m.cfg.ShellInit)
+}
+func (m *Model) cmdDeleteGroup(_ string) tea.Cmd {
+	if g := m.selectedGroup(); g != nil {
+		return m.openDeleteGroupPalette(g)
+	}
+	m.setToast("no group under cursor", toastErr)
+	return nil
+}
 func (m *Model) cmdDB(_ string) tea.Cmd {
 	items := make([]Pickable, 0, len(m.cfg.Databases))
 	for i := range m.cfg.Databases {

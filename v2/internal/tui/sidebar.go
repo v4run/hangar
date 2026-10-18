@@ -195,6 +195,16 @@ func (m *Model) selectedDatabase() *config.Database {
 	return m.selectedRow().db
 }
 
+// groupByID looks up a group by its UUID.
+func (m *Model) groupByID(id uuid.UUID) *config.Group {
+	for i := range m.cfg.Groups {
+		if m.cfg.Groups[i].ID == id {
+			return &m.cfg.Groups[i]
+		}
+	}
+	return nil
+}
+
 // adjustSidebarViewport keeps m.cursor within the visible window.
 func (m *Model) adjustSidebarViewport(visible int) {
 	if visible < 1 {
