@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -105,6 +106,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toast = ""
 		}
 		return m, nil
+	case shellInitEditorDoneMsg:
+		m.mode = ModeBrowse
+		if msg.err != nil {
+			m.setToast("editor: "+msg.err.Error(), toastErr)
+			return m, tea.Batch(tea.ClearScreen, tea.EnableMouseCellMotion, m.clearToastCmd())
+		}
+		m.applyShellInitEditorResult(msg)
+		return m, tea.Batch(tea.ClearScreen, tea.EnableMouseCellMotion, m.clearToastCmd())
 	case hostKeyScannedMsg:
 		m.spinning = false
 		if msg.err != nil {
@@ -320,6 +329,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if g := m.selectedGroup(); g != nil {
 			if m.collapsed[g.ID] {
 				m.collapsed[g.ID] = false
+				m.persistCollapsed()
 				m.rebuildRows()
 			}
 			return m, nil
@@ -340,9 +350,24 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.paneFocus = focusSidebar
 			return m, nil
 		}
-		if g := m.selectedGroup(); g != nil && !m.collapsed[g.ID] {
-			m.collapsed[g.ID] = true
-			m.rebuildRows()
+		if g := m.selectedGroup(); g != nil {
+			if !m.collapsed[g.ID] {
+				m.collapsed[g.ID] = true
+				m.persistCollapsed()
+				m.rebuildRows()
+			}
+			return m, nil
+		}
+		// On a child row (connection / database that lives under a
+		// group), h jumps the cursor to that group's header — v1
+		// behaviour. If the row is already at root (no parent group)
+		// h is a no-op.
+		if c := m.selectedConnection(); c != nil && c.Group != uuid.Nil {
+			m.cursorToGroup(c.Group)
+			return m, nil
+		}
+		if d := m.selectedDatabase(); d != nil && d.Group != uuid.Nil {
+			m.cursorToGroup(d.Group)
 			return m, nil
 		}
 	case key.Matches(msg, m.keymap.Top):
@@ -364,6 +389,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.forwardCursor = 0
 		return m, nil
 	case msg.String() == "esc":
+		if m.visualMode {
+			m.exitVisual()
+			return m, nil
+		}
 		if m.paneFocus == focusDetail {
 			m.paneFocus = focusSidebar
 			return m, nil
@@ -371,6 +400,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keymap.Enter):
 		if r := m.selectedRow(); r.kind == rowSectionHeader && r.group != nil && r.group.Name == "Recent" {
 			m.recentCollapsed = !m.recentCollapsed
+			m.persistCollapsed()
 			m.rebuildRows()
 			return m, nil
 		}
@@ -391,6 +421,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if g := m.selectedGroup(); g != nil {
 			m.collapsed[g.ID] = !m.collapsed[g.ID]
+			m.persistCollapsed()
 			m.rebuildRows()
 			return m, nil
 		}
@@ -458,14 +489,72 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if g := m.selectedGroup(); g != nil {
 			return m, m.openDeleteGroupPalette(g)
 		}
+	case key.Matches(msg, m.keymap.ShellInit):
+		scope, id, text, ok := m.rowShellInitScope()
+		if !ok {
+			m.setToast("select a connection or group first", toastInfo)
+			return m, m.clearToastCmd()
+		}
+		return m, m.openShellInitPalette(scope, id, text)
+	case key.Matches(msg, m.keymap.ShellInitEditor):
+		scope, id, text, ok := m.rowShellInitScope()
+		if !ok {
+			m.setToast("select a connection or group first", toastInfo)
+			return m, m.clearToastCmd()
+		}
+		return m, m.openShellInitInEditor(scope, id, text)
+	case key.Matches(msg, m.keymap.Visual):
+		if m.visualMode {
+			m.exitVisual()
+		} else {
+			m.enterVisual()
+		}
+		return m, nil
+	case key.Matches(msg, m.keymap.Yank):
+		n := m.yankSelection(false)
+		if n > 0 {
+			m.setToast(fmt.Sprintf("copied %d row(s) — p to paste", n), toastOK)
+		} else {
+			m.setToast("nothing to copy", toastInfo)
+		}
+		return m, m.clearToastCmd()
+	case key.Matches(msg, m.keymap.Cut):
+		n := m.yankSelection(true)
+		if n > 0 {
+			m.setToast(fmt.Sprintf("cut %d row(s) — p to paste", n), toastOK)
+		} else {
+			m.setToast("nothing to cut", toastInfo)
+		}
+		return m, m.clearToastCmd()
+	case key.Matches(msg, m.keymap.Paste):
+		n := m.pasteSelection()
+		if n > 0 {
+			m.setToast(fmt.Sprintf("pasted %d row(s)", n), toastOK)
+		} else {
+			m.setToast("clipboard empty", toastInfo)
+		}
+		return m, m.clearToastCmd()
+	case key.Matches(msg, m.keymap.MouseToggle):
+		m.mouseEnabled = !m.mouseEnabled
+		var cmd tea.Cmd
+		if m.mouseEnabled {
+			cmd = tea.EnableMouseCellMotion
+			m.setToast("mouse on", toastOK)
+		} else {
+			cmd = tea.DisableMouse
+			m.setToast("mouse off — drag to select text", toastOK)
+		}
+		return m, tea.Batch(cmd, m.clearToastCmd())
 	case key.Matches(msg, m.keymap.ToggleOpen):
 		if r := m.selectedRow(); r.kind == rowSectionHeader && r.group != nil && r.group.Name == "Recent" {
 			m.recentCollapsed = !m.recentCollapsed
+			m.persistCollapsed()
 			m.rebuildRows()
 			return m, nil
 		}
 		if g := m.selectedGroup(); g != nil {
 			m.collapsed[g.ID] = !m.collapsed[g.ID]
+			m.persistCollapsed()
 			m.rebuildRows()
 			return m, nil
 		}

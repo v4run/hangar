@@ -166,8 +166,19 @@ type Model struct {
 	spinner           spinner.Model      // tick-driven busy indicator for host-key scans etc.
 	spinning          bool
 
-	// Per-user mutable state (frecency); persists in state.json.
+	// Per-user mutable state (frecency, collapsed-groups); persists
+	// in state.json.
 	state *config.State
+
+	// Mouse-capture toggle (M key) — off lets the terminal
+	// drag-select text instead of hangar swallowing clicks.
+	mouseEnabled bool
+
+	// Visual mode + clip buffers (vim-style v / y / x / p).
+	visualMode    bool
+	visualAnchor  int                   // row index where `v` was pressed
+	cutRows       map[uuid.UUID]bool    // marked for cut (move on paste)
+	copyRows      map[uuid.UUID]bool    // marked for copy (duplicate on paste)
 
 	// Connection target of the current connect intent (host-key
 	// confirm path).
@@ -224,19 +235,42 @@ func New(cfg *config.Config, cfgDir string) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
+	st := config.LoadState(cfgDir)
+	collapsed := make(map[uuid.UUID]bool, len(st.CollapsedGroups))
+	for _, id := range st.CollapsedGroups {
+		collapsed[id] = true
+	}
 	m := Model{
-		cfg:       cfg,
-		cfgDir:    cfgDir,
-		collapsed: make(map[uuid.UUID]bool),
-		keymap:    DefaultKeymap(),
-		help:      help.New(),
-		cmdInput:  ti,
-		filter:    fi,
-		spinner:   sp,
-		state:     config.LoadState(cfgDir),
+		cfg:             cfg,
+		cfgDir:          cfgDir,
+		collapsed:       collapsed,
+		recentCollapsed: st.RecentCollapsed,
+		keymap:          DefaultKeymap(),
+		help:            help.New(),
+		cmdInput:        ti,
+		filter:          fi,
+		spinner:         sp,
+		state:           st,
+		mouseEnabled:    true,
+		cutRows:         map[uuid.UUID]bool{},
+		copyRows:        map[uuid.UUID]bool{},
 	}
 	m.rebuildRows()
 	return m
+}
+
+// persistCollapsed writes the current fold layout to state.json.
+// Non-fatal on error — the in-memory state is still correct.
+func (m *Model) persistCollapsed() {
+	ids := make([]uuid.UUID, 0, len(m.collapsed))
+	for id, c := range m.collapsed {
+		if c {
+			ids = append(ids, id)
+		}
+	}
+	m.state.CollapsedGroups = ids
+	m.state.RecentCollapsed = m.recentCollapsed
+	_ = config.SaveState(m.cfgDir, m.state)
 }
 
 // Init satisfies tea.Model.

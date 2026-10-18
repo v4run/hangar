@@ -21,6 +21,13 @@ type State struct {
 	// Usage[id] records the last-touched time and total count for
 	// a connection or database.
 	Usage map[uuid.UUID]Usage `json:"usage,omitempty"`
+	// CollapsedGroups is the set of group IDs the user has
+	// collapsed in the sidebar — persists across runs so the fold
+	// layout survives restart.
+	CollapsedGroups []uuid.UUID `json:"collapsed_groups,omitempty"`
+	// RecentCollapsed persists the frecency section's open/closed
+	// state, same spirit.
+	RecentCollapsed bool `json:"recent_collapsed,omitempty"`
 }
 
 // Usage is one row of the Usage map.

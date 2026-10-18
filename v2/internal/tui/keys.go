@@ -45,6 +45,19 @@ type KeyMap struct {
 	// Group toggle (open/close)
 	ToggleOpen key.Binding
 
+	// Mouse-capture toggle
+	MouseToggle key.Binding
+
+	// Shell-init editors (reachable from any row)
+	ShellInit       key.Binding // i → inline palette for the row's scope
+	ShellInitEditor key.Binding // I → opens the shell-init text in $EDITOR
+
+	// Visual / clip buffer
+	Visual key.Binding // v → enter visual-range selection
+	Yank   key.Binding // y → copy selection
+	Cut    key.Binding // x → cut selection
+	Paste  key.Binding // p → paste into the target group
+
 	// Global
 	Quit key.Binding
 	Esc  key.Binding
@@ -60,7 +73,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right, k.Top, k.Bottom, k.PageUp, k.PageDn},
 		{k.Enter, k.Tab, k.ShiftTab, k.ToggleExpand},
-		{k.Connect, k.Edit, k.Add, k.NewGroup, k.Duplicate, k.Delete, k.ImportSSH, k.ToggleOpen, k.MoveUp, k.MoveDown},
+		{k.Connect, k.Edit, k.Add, k.NewGroup, k.Duplicate, k.Delete, k.ImportSSH, k.ToggleOpen, k.MoveUp, k.MoveDown, k.MouseToggle, k.ShellInit, k.ShellInitEditor, k.Visual, k.Yank, k.Cut, k.Paste},
 		{k.Filter, k.Cmd, k.Leader, k.Help, k.Quit},
 	}
 }
@@ -92,11 +105,18 @@ func DefaultKeymap() KeyMap {
 		Delete:    b([]string{"d"}, "d", "delete"),
 		Duplicate: b([]string{"y"}, "y", "duplicate"),
 		NewGroup:  b([]string{"g"}, "g", "new group"),
-		ImportSSH: b([]string{"i"}, "i", "import ssh cmd"),
+		ImportSSH: b([]string{""}, "", "import ssh cmd"), // moved to `:import` / leader `i` — `i` now opens shell-init for the row
 		ToggleExpand: b([]string{" "}, "space", "toggle expand"),
 		MoveUp:     b([]string{"K"}, "K", "move up"),
 		MoveDown:   b([]string{"J"}, "J", "move down"),
-		ToggleOpen: b([]string{"o"}, "o", "open / close selected group"),
+		ToggleOpen:      b([]string{"o"}, "o", "open / close selected group"),
+		MouseToggle:     b([]string{"M"}, "M", "toggle mouse capture (off = terminal text-select works)"),
+		ShellInit:       b([]string{"i"}, "i", "edit shell init for the selected row's scope"),
+		ShellInitEditor: b([]string{"I"}, "I", "edit shell init in $EDITOR"),
+		Visual:          b([]string{"v"}, "v", "enter visual-range selection"),
+		Yank:            b([]string{"y"}, "y", "copy marked rows (paste with p)"),
+		Cut:             b([]string{"x"}, "x", "cut marked rows (paste moves them)"),
+		Paste:           b([]string{"p"}, "p", "paste into the cursor's group"),
 		Quit:     b([]string{"q", "ctrl+c"}, "q", "quit"),
 		Esc:      b([]string{"esc"}, "esc", "cancel"),
 	}

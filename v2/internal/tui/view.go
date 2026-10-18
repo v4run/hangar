@@ -141,13 +141,35 @@ func (m Model) renderSidebar(w, h int) string {
 		end = len(rows)
 	}
 	for i := offset; i < end; i++ {
-		b.WriteString(m.renderRow(rows[i], i == m.cursor, w))
+		inRange := false
+		if lo, hi, ok := m.visualRange(); ok && i >= lo && i <= hi {
+			inRange = true
+		}
+		cut, cop := m.rowIsClipped(i)
+		b.WriteString(m.renderRowX(rows[i], i == m.cursor, inRange, cut, cop, w))
 		b.WriteString("\n")
 	}
 	if len(rows) == 0 {
 		b.WriteString(theme.Dim.Render("  (no matches)"))
 	}
 	return b.String()
+}
+
+var (
+	cutMarker  = lipgloss.NewStyle().Foreground(theme.Danger).Render(" ✂")
+	copyMarker = lipgloss.NewStyle().Foreground(theme.AccentDim).Render(" +")
+)
+
+// renderRowX wraps renderRow with visual-mode / cut / copy decorations.
+func (m Model) renderRowX(r row, selected, inRange, cut, cop bool, width int) string {
+	line := m.renderRow(r, selected || inRange, width)
+	switch {
+	case cut:
+		return line + cutMarker
+	case cop:
+		return line + copyMarker
+	}
+	return line
 }
 
 func (m Model) renderRow(r row, selected bool, width int) string {
@@ -526,10 +548,12 @@ func (m Model) renderNotesTab(w int) string {
 
 func (m Model) renderStatusBar() string {
 	var chip string
-	switch m.mode {
-	case ModeEdit:
+	switch {
+	case m.visualMode:
+		chip = theme.ChipEdit.Render("VISUAL")
+	case m.mode == ModeEdit:
 		chip = theme.ChipEdit.Render("EDIT")
-	case ModeConnect:
+	case m.mode == ModeConnect:
 		chip = theme.ChipConnect.Render("CONNECT")
 	default:
 		chip = theme.ChipBrowse.Render("BROWSE")
