@@ -391,6 +391,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if c := m.selectedConnection(); c != nil {
 			return m, m.openDeleteConnectionPalette(c)
 		}
+		if d := m.selectedDatabase(); d != nil {
+			return m, m.openDeleteDatabasePalette(d)
+		}
+		if g := m.selectedGroup(); g != nil {
+			return m, m.openDeleteGroupPalette(g)
+		}
 	case key.Matches(msg, m.keymap.ToggleOpen):
 		if g := m.selectedGroup(); g != nil {
 			m.collapsed[g.ID] = !m.collapsed[g.ID]
