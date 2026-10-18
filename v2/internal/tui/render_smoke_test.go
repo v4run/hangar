@@ -28,6 +28,13 @@ func TestRenderEmptyConfig(t *testing.T) {
 	if !strings.Contains(out, "BROWSE") {
 		t.Fatalf("expected mode chip, got:\n%s", out)
 	}
+	// And the whole thing must fit inside the terminal — otherwise
+	// the shell will scroll the header off before the user ever
+	// sees it. This is the regression that produced the "logo only
+	// visible when I press a key" bug.
+	if lines := strings.Count(out, "\n") + 1; lines > 30 {
+		t.Fatalf("render overflowed terminal height: %d lines in a 30-tall view\n%s", lines, out)
+	}
 }
 
 // TestRenderPopulatedConfig exercises the common happy path.

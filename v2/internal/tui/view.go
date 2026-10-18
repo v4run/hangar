@@ -22,22 +22,30 @@ func (m Model) View() string {
 		return "loading…"
 	}
 	sidebarW := m.sidebarWidth()
-	rightW := m.width - sidebarW - 2 // account for the gap
+	rightW := m.width - sidebarW
 
-	contentH := m.height - 3 // header 1 + status 1 + margin
-	if contentH < 3 {
-		contentH = 3
+	// Terminal height is spent on: header(1) + body + status(1).
+	// `theme.Pane` has a rounded border that adds 2 rows (top + bottom)
+	// to whatever Height() we pass. So the Height value is paneH-2.
+	// Total: 1 (header) + paneH (incl. border) + 1 (status) == m.height.
+	paneH := m.height - 2
+	if paneH < 4 {
+		paneH = 4
+	}
+	innerH := paneH - 2 // content rows inside the border
+	if innerH < 1 {
+		innerH = 1
 	}
 
 	header := m.renderHeader()
 	sidebar := theme.Pane.
 		Width(sidebarW - 2).
-		Height(contentH).
-		Render(m.renderSidebar(sidebarW-4, contentH-2))
+		Height(innerH).
+		Render(m.renderSidebar(sidebarW-4, innerH))
 	right := theme.Pane.
 		Width(rightW - 2).
-		Height(contentH).
-		Render(m.renderDetail(rightW-4, contentH-2))
+		Height(innerH).
+		Render(m.renderDetail(rightW-4, innerH))
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, right)
 	status := m.renderStatusBar()
