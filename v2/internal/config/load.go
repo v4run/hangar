@@ -41,6 +41,19 @@ func Load(dir string) (*Config, error) {
 		if err := Validate(&c); err != nil {
 			return nil, fmt.Errorf("validate %s: %w", path, err)
 		}
+		// If the on-disk v2 config is empty (schema only, no groups /
+		// connections / databases) AND a v1 install has data,
+		// migrate it in. This covers the "I ran v2 once with no v1
+		// yet / before migration logic existed" case so users don't
+		// get stranded with a blank sidebar.
+		if isEmptyConfig(&c) {
+			if migrated, ok, mErr := MigrateFromV1(); mErr == nil && ok {
+				if err := Save(dir, migrated); err != nil {
+					return nil, fmt.Errorf("save migrated config: %w", err)
+				}
+				return migrated, nil
+			}
+		}
 		return &c, nil
 	case errors.Is(err, os.ErrNotExist):
 		// Fresh install OR first v2 run against an existing v1 config.
@@ -56,6 +69,10 @@ func Load(dir string) (*Config, error) {
 	default:
 		return nil, err
 	}
+}
+
+func isEmptyConfig(c *Config) bool {
+	return len(c.Groups) == 0 && len(c.Connections) == 0 && len(c.Databases) == 0
 }
 
 // Save writes the config atomically to dir/config.yaml.

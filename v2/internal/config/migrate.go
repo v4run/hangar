@@ -57,27 +57,63 @@ type v1Database struct {
 	Password string            `yaml:"password"`
 }
 
-// MigrateFromV1 looks for ~/.hangar/config.yaml and, if present,
-// returns an equivalent schema-2 Config. ok=false means no v1
-// config was found (fresh install).
+// v1Global parses the subset of v1's ~/.hangar/config.yaml we care
+// about (global SSH options). Everything else in that file is v1
+// chrome and ignored.
+type v1Global struct {
+	SSHOptions *SSHOptions `yaml:"ssh_options"`
+}
+
+// MigrateFromV1 looks for a v1 install (both ~/.hangar/connections.yaml
+// — the connection/group/db data — and ~/.hangar/config.yaml — global
+// SSH options). ok=false means no v1 data was found (fresh install).
 func MigrateFromV1() (*Config, bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, false, err
 	}
-	path := filepath.Join(home, ".hangar", "config.yaml")
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+	v1 := &v1Config{}
+	found := false
+
+	// connections.yaml carries connections, groups, databases,
+	// shell-init etc. Historically this file was called
+	// `connections.yaml` in v1; older installs may have everything in
+	// `config.yaml`.
+	for _, name := range []string{"connections.yaml", "config.yaml"} {
+		data, rErr := os.ReadFile(filepath.Join(home, ".hangar", name))
+		if errors.Is(rErr, os.ErrNotExist) {
+			continue
+		}
+		if rErr != nil {
+			return nil, false, rErr
+		}
+		var parsed v1Config
+		if err := yaml.Unmarshal(data, &parsed); err != nil {
+			return nil, false, fmt.Errorf("parse %s: %w", name, err)
+		}
+		if len(parsed.Connections) == 0 && len(parsed.Groups) == 0 && len(parsed.Databases) == 0 && parsed.GlobalShellInit == "" {
+			continue
+		}
+		*v1 = parsed
+		found = true
+		break
+	}
+
+	// Separately, ~/.hangar/config.yaml holds the GlobalConfig
+	// SSHOptions. Merge them in regardless of where the connections
+	// came from.
+	if data, err := os.ReadFile(filepath.Join(home, ".hangar", "config.yaml")); err == nil {
+		var g v1Global
+		if yaml.Unmarshal(data, &g) == nil && g.SSHOptions != nil {
+			v1.SSHOptions = g.SSHOptions
+			found = true
+		}
+	}
+
+	if !found {
 		return nil, false, nil
 	}
-	if err != nil {
-		return nil, false, err
-	}
-	var v1 v1Config
-	if err := yaml.Unmarshal(data, &v1); err != nil {
-		return nil, false, fmt.Errorf("parse v1 config: %w", err)
-	}
-	cfg := migrateV1(&v1)
+	cfg := migrateV1(v1)
 	return cfg, true, nil
 }
 
