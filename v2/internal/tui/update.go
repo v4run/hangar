@@ -466,6 +466,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if c := m.selectedConnection(); c != nil {
 			return m, m.openEditConnectionPalette(c)
 		}
+		if d := m.selectedDatabase(); d != nil {
+			return m, m.openEditDatabasePalette(d)
+		}
 		if g := m.selectedGroup(); g != nil {
 			return m, m.openEditGroupPalette(g)
 		}

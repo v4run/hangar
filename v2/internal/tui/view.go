@@ -719,7 +719,7 @@ func (m Model) renderCmdBar() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(theme.Dim.Render("  tab: autocomplete   enter: run   esc: cancel"))
-	return paddedBox(b.String(), minInt(60, m.width-10))
+	return paddedBox(b.String(), m.modalWidth(60, 100))
 }
 
 func (m Model) renderLeader() string {
@@ -753,7 +753,7 @@ func (m Model) renderLeader() string {
 		b.WriteString("\n")
 	}
 	b.WriteString(theme.Dim.Render("  esc  cancel"))
-	return paddedBox(b.String(), 44)
+	return paddedBox(b.String(), m.modalWidth(50, 70))
 }
 
 func (m Model) renderPicker() string {
@@ -765,7 +765,7 @@ func (m Model) renderPicker() string {
 
 	// Overall box width. Picker lives centered, bordered twice (outer
 	// paddedBox + inner lists), so leave some slack on each side.
-	width := minInt(80, m.width-10)
+	width := m.modalWidth(80, 140)
 	if width < 40 {
 		width = minInt(m.width-4, 40)
 	}
@@ -983,7 +983,7 @@ func (m Model) renderPalette() string {
 		b.WriteString("\n\n")
 		b.WriteString(theme.ErrorText.Render("  " + m.palette.err))
 	}
-	return paddedBox(b.String(), minInt(80, m.width-10))
+	return paddedBox(b.String(), m.modalWidth(80, 120))
 }
 
 // helpBodyLines returns the full help body as one line per entry.
@@ -1062,7 +1062,7 @@ func (m Model) renderHelp() string {
 		b.WriteString("\n")
 	}
 	b.WriteString(theme.Dim.Render("  esc / ? to close"))
-	return paddedBox(b.String(), minInt(72, m.width-10))
+	return paddedBox(b.String(), m.modalWidth(72, 110))
 }
 
 // --- helpers ---
@@ -1107,6 +1107,26 @@ func findDBByID(cfg *config.Config, id uuid.UUID) *config.Database {
 		}
 	}
 	return nil
+}
+
+// modalWidth returns a comfortable modal width for the current
+// terminal, clamped to [preferredMin, preferredMax] but never
+// exceeding (terminalWidth - 4) so the border always fits.
+func (m Model) modalWidth(preferredMin, preferredMax int) int {
+	target := m.width * 3 / 4 // 75% of the terminal
+	if target < preferredMin {
+		target = preferredMin
+	}
+	if target > preferredMax {
+		target = preferredMax
+	}
+	if target > m.width-4 {
+		target = m.width - 4
+	}
+	if target < 20 {
+		target = 20
+	}
+	return target
 }
 
 func paddedBox(s string, width int) string {
