@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -60,8 +61,17 @@ func BuildArgs(cfg *config.Config, r *config.Resolved) []string {
 		for _, rf := range o.RemoteForward {
 			args = append(args, "-R", rf)
 		}
-		for k, v := range o.ExtraOptions {
-			args = append(args, "-o", k+"="+v)
+		// Sort ExtraOptions keys so successive renders / executions
+		// produce the same argv order (map iteration is random in
+		// Go). The sort is cheap and makes the detail pane's SSH
+		// command stable, which otherwise shuffles each refresh.
+		keys := make([]string, 0, len(o.ExtraOptions))
+		for k := range o.ExtraOptions {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			args = append(args, "-o", k+"="+o.ExtraOptions[k])
 		}
 	}
 	if c.IdentityFile != "" {
@@ -94,8 +104,13 @@ func NewCommand(cfg *config.Config, r *config.Resolved) (*exec.Cmd, func()) {
 	cmd := exec.Command("ssh", args...)
 	if len(r.Env) > 0 {
 		cmd.Env = os.Environ()
-		for k, v := range r.Env {
-			cmd.Env = append(cmd.Env, k+"="+v)
+		envKeys := make([]string, 0, len(r.Env))
+		for k := range r.Env {
+			envKeys = append(envKeys, k)
+		}
+		sort.Strings(envKeys)
+		for _, k := range envKeys {
+			cmd.Env = append(cmd.Env, k+"="+r.Env[k])
 		}
 	}
 	cleanup := func() {}
