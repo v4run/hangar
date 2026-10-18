@@ -173,9 +173,21 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.paletteEditing {
+		cur := &m.palette.fields[m.palette.focus]
 		switch msg.String() {
 		case "esc", "enter":
 			m.exitEditMode()
+			return *m, nil
+		}
+		// Choice fields cycle on h / l / ← / → in edit mode; typing
+		// is disabled.
+		if len(cur.choices) > 0 {
+			switch msg.String() {
+			case "l", "right", " ":
+				cycleChoiceField(cur, +1)
+			case "h", "left":
+				cycleChoiceField(cur, -1)
+			}
 			return *m, nil
 		}
 		// Tag-chip editor owns its field when active.
@@ -189,7 +201,6 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Nav mode.
-	cur := &m.palette.fields[m.palette.focus]
 	switch msg.String() {
 	case "esc":
 		m.closePalette()
@@ -198,27 +209,8 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return *m, m.nextField()
 	case "k", "up", "shift+tab":
 		return *m, m.prevField()
-	case "enter":
-		if len(cur.choices) > 0 {
-			cycleChoiceField(cur, +1)
-			return *m, nil
-		}
+	case "enter", "i":
 		return *m, m.enterEditMode()
-	case "i":
-		if len(cur.choices) > 0 {
-			return *m, nil // typing disabled on choice fields
-		}
-		return *m, m.enterEditMode()
-	case "l", "right":
-		if len(cur.choices) > 0 {
-			cycleChoiceField(cur, +1)
-			return *m, nil
-		}
-	case "h", "left":
-		if len(cur.choices) > 0 {
-			cycleChoiceField(cur, -1)
-			return *m, nil
-		}
 	case "g":
 		m.palette.focus = 0
 		return *m, m.focusField(0)

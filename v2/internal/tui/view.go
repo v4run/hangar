@@ -931,10 +931,9 @@ func (m Model) renderPalette() string {
 			var val string
 			switch {
 			case len(f.choices) > 0:
-				// Cycle field — render as `< value >` with chevrons
+				// Cycle field — render as `‹ value ›` with chevrons
 				// that look like dropdown handles. Blank values show
-				// as "(inherit)" so an empty slot in a yes/no/blank
-				// list reads correctly.
+				// as "(inherit)" so an empty slot reads correctly.
 				cur := f.input.Value()
 				label := cur
 				if cur == "" {
@@ -944,11 +943,17 @@ func (m Model) renderPalette() string {
 				}
 				chev := theme.Hint.Render("‹")
 				chevR := theme.Hint.Render("›")
-				if i == focused {
+				if i == focused && m.paletteEditing {
+					chev = theme.Cursor.Bold(true).Render("◂")
+					chevR = theme.Cursor.Bold(true).Render("▸")
+				} else if i == focused {
 					chev = theme.Cursor.Render("‹")
 					chevR = theme.Cursor.Render("›")
 				}
 				val = chev + " " + label + " " + chevR
+				if i == focused && m.paletteEditing {
+					val += "  " + theme.Hint.Render("(h/l to cycle, enter / esc to confirm)")
+				}
 			case m.paletteUseTags && i == m.palette.tagFieldIdx:
 				switch {
 				case i == focused && m.paletteEditing:
