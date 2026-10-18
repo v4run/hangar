@@ -391,6 +391,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if c := m.selectedConnection(); c != nil {
 			return m, m.openDeleteConnectionPalette(c)
 		}
+	case key.Matches(msg, m.keymap.ToggleOpen):
+		if g := m.selectedGroup(); g != nil {
+			m.collapsed[g.ID] = !m.collapsed[g.ID]
+			m.rebuildRows()
+			return m, nil
+		}
+		m.setToast("that row isn't a group", toastInfo)
+		return m, nil
 	case key.Matches(msg, m.keymap.MoveUp):
 		m.moveSelectedBy(-1)
 		return m, nil
