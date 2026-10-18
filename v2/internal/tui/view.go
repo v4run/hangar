@@ -186,8 +186,10 @@ func (m Model) renderRow(r row, selected bool, width int) string {
 		if count > 0 {
 			tag = theme.Hint.Render(fmt.Sprintf("  (%d)", count))
 		}
-		// Groups: bold accent so they stand out as parents.
-		line := indent + theme.Cursor.Render(chev+" ") + theme.Title.Render(name) + tag
+		// Groups: same visual weight as the Recent section header
+		// (dim Label style) — reads as a section heading in the
+		// sidebar's tree. Indentation only reflects nesting depth.
+		line := indent + theme.Label.Render(chev+" "+name) + tag
 		return clipLine(line, width, selected)
 	case rowConnection:
 		// Connections: dim bullet + normal name, indented under
