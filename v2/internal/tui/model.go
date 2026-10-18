@@ -17,6 +17,16 @@ import (
 	sshauth "github.com/v4run/hangar/v2/internal/ssh"
 )
 
+// paneFocus names which pane owns the keyboard arrow keys. The
+// sidebar list owns them by default; `tab` moves focus into the
+// right-pane detail, `h` / `esc` moves it back.
+type paneFocus int
+
+const (
+	focusSidebar paneFocus = iota
+	focusDetail
+)
+
 // Mode names what the next keystroke will do, surfaced as a coloured
 // chip in the status bar.
 type Mode int
@@ -72,6 +82,8 @@ const (
 	PaletteDeleteGroup
 	PaletteShellInit
 	PaletteAddForward
+	PaletteDeleteScript
+	PaletteDeleteForward
 )
 
 // Tab names a detail-pane tab.
@@ -104,8 +116,12 @@ type Model struct {
 	cursor    int  // index into `rows`
 	offset    int  // top row visible in sidebar viewport
 
-	// Current detail tab.
-	tab Tab
+	// Current detail tab + per-tab item cursor + which pane owns
+	// keyboard focus (sidebar list vs the active detail tab).
+	tab           Tab
+	paneFocus     paneFocus
+	scriptCursor  int
+	forwardCursor int
 
 	// Mode indicator.
 	mode Mode
@@ -136,8 +152,10 @@ type Model struct {
 
 	// Palette state.
 	palette          paletteState
-	paletteOpts       *config.SSHOptions // SSHOptions carried into add-conn from ssh-import
-	paletteScriptIdx  int                // -1 = new script, else index into Scripts
+	paletteOpts        *config.SSHOptions // SSHOptions carried into add-conn from ssh-import
+	paletteScriptIdx   int                // -1 = new script, else index into Scripts
+	paletteForwardIdx  int                // index into the resolved forward list
+	paletteForwardDir  string             // "L" or "R" — which list the index refers to
 	shellInitScopeSel shellInitScope     // which scope the current ShellInit palette targets
 	paletteTextarea   textarea.Model     // multi-line editor used by shell-init / notes palettes
 	paletteTags       tagChips           // tag-chip editor for connection + group palettes

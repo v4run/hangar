@@ -8,6 +8,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
+
+	"github.com/v4run/hangar/v2/internal/config"
 )
 
 var textinputBlink = textinput.Blink
@@ -255,13 +257,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openLeader()
 		return m, nil
 	case key.Matches(msg, m.keymap.Down):
+		if m.paneFocus == focusDetail {
+			m.moveDetailCursor(+1)
+			return m, nil
+		}
 		if m.cursor < len(m.rows)-1 {
 			m.cursor++
+			m.scriptCursor, m.forwardCursor = 0, 0
 		}
 		return m, nil
 	case key.Matches(msg, m.keymap.Up):
+		if m.paneFocus == focusDetail {
+			m.moveDetailCursor(-1)
+			return m, nil
+		}
 		if m.cursor > 0 {
 			m.cursor--
+			m.scriptCursor, m.forwardCursor = 0, 0
 		}
 		return m, nil
 	case key.Matches(msg, m.keymap.Right):
@@ -271,6 +283,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case key.Matches(msg, m.keymap.Left):
+		if m.paneFocus == focusDetail {
+			m.paneFocus = focusSidebar
+			return m, nil
+		}
 		if g := m.selectedGroup(); g != nil && !m.collapsed[g.ID] {
 			m.collapsed[g.ID] = true
 			m.rebuildRows()
@@ -284,11 +300,31 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keymap.Tab):
 		m.tab = (m.tab + 1) % Tab(tabCount)
+		m.paneFocus = focusDetail
+		m.scriptCursor = 0
+		m.forwardCursor = 0
 		return m, nil
 	case key.Matches(msg, m.keymap.ShiftTab):
 		m.tab = (m.tab + Tab(tabCount) - 1) % Tab(tabCount)
+		m.paneFocus = focusDetail
+		m.scriptCursor = 0
+		m.forwardCursor = 0
 		return m, nil
+	case msg.String() == "esc":
+		if m.paneFocus == focusDetail {
+			m.paneFocus = focusSidebar
+			return m, nil
+		}
 	case key.Matches(msg, m.keymap.Enter):
+		if m.paneFocus == focusDetail && m.tab == TabScripts {
+			if c := m.selectedConnection(); c != nil {
+				r := config.Resolve(m.cfg, c)
+				if m.scriptCursor >= 0 && m.scriptCursor < len(r.Scripts) {
+					return m, m.runScriptOn(c, r.Scripts[m.scriptCursor])
+				}
+			}
+			return m, nil
+		}
 		if c := m.selectedConnection(); c != nil {
 			return m, m.beginConnect(c)
 		}
@@ -305,6 +341,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.beginConnect(c)
 		}
 	case key.Matches(msg, m.keymap.Edit):
+		if m.paneFocus == focusDetail && m.tab == TabScripts {
+			if c := m.selectedConnection(); c != nil && m.scriptCursor < len(c.Scripts) {
+				return m, m.openEditScriptPalette(c, m.scriptCursor)
+			}
+			return m, nil
+		}
 		if c := m.selectedConnection(); c != nil {
 			return m, m.openEditConnectionPalette(c)
 		}
@@ -312,10 +354,35 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.openEditGroupPalette(g)
 		}
 	case key.Matches(msg, m.keymap.Add):
+		if m.paneFocus == focusDetail {
+			switch m.tab {
+			case TabScripts:
+				if c := m.selectedConnection(); c != nil {
+					return m, m.openAddScriptPalette(c)
+				}
+				return m, nil
+			case TabForwards:
+				if c := m.selectedConnection(); c != nil {
+					return m, m.openAddForwardPalette(c)
+				}
+				return m, nil
+			}
+		}
 		return m, m.openAddConnectionPalette()
 	case key.Matches(msg, m.keymap.NewGroup):
 		return m, m.openAddGroupPalette()
 	case key.Matches(msg, m.keymap.Delete):
+		if m.paneFocus == focusDetail {
+			switch m.tab {
+			case TabScripts:
+				if c := m.selectedConnection(); c != nil && m.scriptCursor < len(c.Scripts) {
+					return m, m.openDeleteScriptPalette(c, m.scriptCursor)
+				}
+				return m, nil
+			case TabForwards:
+				return m, m.deleteFocusedForward()
+			}
+		}
 		if c := m.selectedConnection(); c != nil {
 			return m, m.openDeleteConnectionPalette(c)
 		}
@@ -349,6 +416,67 @@ func (m *Model) cursorToConnection(id uuid.UUID) {
 			return
 		}
 	}
+}
+
+// moveDetailCursor advances the per-tab cursor in the right pane
+// (Scripts or Forwards). On Details / Notes it's a no-op.
+func (m *Model) moveDetailCursor(delta int) {
+	c := m.selectedConnection()
+	if c == nil {
+		return
+	}
+	switch m.tab {
+	case TabScripts:
+		r := config.Resolve(m.cfg, c)
+		n := len(r.Scripts)
+		if n == 0 {
+			return
+		}
+		m.scriptCursor = clampInt(m.scriptCursor+delta, 0, n-1)
+	case TabForwards:
+		r := config.Resolve(m.cfg, c)
+		n := 0
+		if r.SSHOptions != nil {
+			n = len(r.SSHOptions.LocalForward) + len(r.SSHOptions.RemoteForward)
+		}
+		if n == 0 {
+			return
+		}
+		m.forwardCursor = clampInt(m.forwardCursor+delta, 0, n-1)
+	}
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// deleteFocusedForward figures out which direction + index the
+// forwardCursor points at (across the connection's OWN local +
+// remote lists; inherited forwards aren't deletable here) and
+// opens the delete palette.
+func (m *Model) deleteFocusedForward() tea.Cmd {
+	c := m.selectedConnection()
+	if c == nil || c.SSHOptions == nil {
+		return nil
+	}
+	locals := c.SSHOptions.LocalForward
+	remotes := c.SSHOptions.RemoteForward
+	idx := m.forwardCursor
+	if idx < len(locals) {
+		return m.openDeleteForwardPalette(c, "L", idx)
+	}
+	ri := idx - len(locals)
+	if ri < len(remotes) {
+		return m.openDeleteForwardPalette(c, "R", ri)
+	}
+	m.setToast("that forward is inherited — edit the group instead", toastInfo)
+	return nil
 }
 
 // cursorToDatabase moves the sidebar cursor onto the given db row.

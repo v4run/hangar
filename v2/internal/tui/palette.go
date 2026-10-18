@@ -78,7 +78,8 @@ func (m *Model) prevField() tea.Cmd {
 func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Confirm-style palettes have no fields — handle them first.
 	switch m.palette.kind {
-	case PaletteDeleteConnection, PaletteDeleteDatabase, PaletteDeleteGroup:
+	case PaletteDeleteConnection, PaletteDeleteDatabase, PaletteDeleteGroup,
+		PaletteDeleteScript, PaletteDeleteForward:
 		switch msg.String() {
 		case "esc", "n", "N":
 			m.closePalette()
@@ -386,7 +387,116 @@ func (m *Model) submitPalette() (tea.Model, tea.Cmd) {
 		return m.saveShellInit()
 	case PaletteAddForward:
 		return m.saveForward()
+	case PaletteDeleteScript:
+		return m.deleteScript()
+	case PaletteDeleteForward:
+		return m.deleteForward()
 	}
+	return m, nil
+}
+
+func (m *Model) openDeleteScriptPalette(c *config.Connection, idx int) tea.Cmd {
+	if idx < 0 || idx >= len(c.Scripts) {
+		return nil
+	}
+	s := c.Scripts[idx]
+	m.palette = paletteState{
+		kind:    PaletteDeleteScript,
+		title:   "Delete script",
+		message: fmt.Sprintf("Delete %q (%s)? (y/n)", s.Name, s.Command),
+		target:  c.ID,
+	}
+	m.paletteScriptIdx = idx
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return nil
+}
+
+func (m *Model) deleteScript() (tea.Model, tea.Cmd) {
+	idx := m.paletteScriptIdx
+	for i := range m.cfg.Connections {
+		if m.cfg.Connections[i].ID != m.palette.target {
+			continue
+		}
+		c := &m.cfg.Connections[i]
+		if idx < 0 || idx >= len(c.Scripts) {
+			m.closePalette()
+			return m, nil
+		}
+		name := c.Scripts[idx].Name
+		c.Scripts = append(c.Scripts[:idx], c.Scripts[idx+1:]...)
+		if err := config.Save(m.cfgDir, m.cfg); err != nil {
+			m.palette.err = err.Error()
+			return m, nil
+		}
+		m.closePalette()
+		if m.scriptCursor >= len(c.Scripts) && m.scriptCursor > 0 {
+			m.scriptCursor--
+		}
+		m.setToast("deleted script "+name, toastOK)
+		return m, nil
+	}
+	m.closePalette()
+	return m, nil
+}
+
+func (m *Model) openDeleteForwardPalette(c *config.Connection, dir string, idx int) tea.Cmd {
+	// idx is relative to the connection's OWN forward list; inherited
+	// forwards aren't deletable here (they live on the parent group).
+	var list []string
+	if c.SSHOptions != nil {
+		if dir == "L" {
+			list = c.SSHOptions.LocalForward
+		} else {
+			list = c.SSHOptions.RemoteForward
+		}
+	}
+	if idx < 0 || idx >= len(list) {
+		m.setToast("that forward is inherited — edit the group instead", toastInfo)
+		return nil
+	}
+	m.palette = paletteState{
+		kind:    PaletteDeleteForward,
+		title:   "Delete port forward",
+		message: fmt.Sprintf("Delete %s %s? (y/n)", dir, list[idx]),
+		target:  c.ID,
+	}
+	m.paletteForwardIdx = idx
+	m.paletteForwardDir = dir
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return nil
+}
+
+func (m *Model) deleteForward() (tea.Model, tea.Cmd) {
+	for i := range m.cfg.Connections {
+		if m.cfg.Connections[i].ID != m.palette.target {
+			continue
+		}
+		c := &m.cfg.Connections[i]
+		if c.SSHOptions == nil {
+			m.closePalette()
+			return m, nil
+		}
+		idx := m.paletteForwardIdx
+		if m.paletteForwardDir == "L" {
+			if idx >= 0 && idx < len(c.SSHOptions.LocalForward) {
+				c.SSHOptions.LocalForward = append(c.SSHOptions.LocalForward[:idx], c.SSHOptions.LocalForward[idx+1:]...)
+			}
+		} else {
+			if idx >= 0 && idx < len(c.SSHOptions.RemoteForward) {
+				c.SSHOptions.RemoteForward = append(c.SSHOptions.RemoteForward[:idx], c.SSHOptions.RemoteForward[idx+1:]...)
+			}
+		}
+		if err := config.Save(m.cfgDir, m.cfg); err != nil {
+			m.palette.err = err.Error()
+			return m, nil
+		}
+		m.closePalette()
+		m.setToast("forward removed", toastOK)
+		return m, nil
+	}
+	m.closePalette()
 	return m, nil
 }
 

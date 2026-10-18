@@ -237,7 +237,6 @@ func (m Model) renderTabs(w int) string {
 	for t := Tab(0); t < Tab(tabCount); t++ {
 		label := t.String()
 		if t == m.tab {
-			// Pop the current tab with a leading dot + bold accent.
 			parts = append(parts, theme.Selected.Render("● "+label))
 		} else {
 			parts = append(parts, theme.Dim.Render("  "+label))
@@ -245,6 +244,9 @@ func (m Model) renderTabs(w int) string {
 	}
 	bar := strings.Join(parts, theme.Hint.Render("   "))
 	hint := theme.Hint.Render("  (tab / shift+tab)")
+	if m.paneFocus == focusDetail {
+		hint = theme.Cursor.Render("  ◆ detail focused ") + theme.Hint.Render("(esc / h to leave)")
+	}
 	return bar + hint
 }
 
@@ -345,21 +347,29 @@ func (m Model) renderScriptsTab(w int) string {
 	}
 	r := config.Resolve(m.cfg, c)
 	if len(r.Scripts) == 0 {
-		return theme.Dim.Render("  (no scripts — leader s to add)")
+		return theme.Dim.Render("  (no scripts — tab to focus, then `a` to add)")
 	}
+	focused := m.paneFocus == focusDetail && m.tab == TabScripts
 	var b strings.Builder
 	for i, s := range r.Scripts {
-		marker := "•"
-		if i < len(c.Scripts) {
-			marker = theme.Cursor.Render("•")
-		} else {
-			marker = theme.Dim.Render("•")
+		inherited := i >= len(c.Scripts)
+		marker := "  "
+		if focused && i == m.scriptCursor {
+			marker = theme.Selected.Render("› ")
 		}
-		fmt.Fprintf(&b, "  %s %s\n", marker, theme.Normal.Render(s.Name))
-		fmt.Fprintf(&b, "      %s\n", theme.Dim.Render("$ "+s.Command))
+		name := theme.Normal.Render(s.Name)
+		if inherited {
+			name += theme.Hint.Render("  — inherited")
+		}
+		fmt.Fprintf(&b, "%s%s\n", marker, name)
+		fmt.Fprintf(&b, "    %s\n", theme.Dim.Render("$ "+s.Command))
 	}
 	b.WriteString("\n")
-	b.WriteString(theme.Dim.Render("  leader s: new   leader e: edit selected (coming in alpha.2)"))
+	if focused {
+		b.WriteString(theme.Dim.Render("  j/k select  enter run  e edit  d delete  a add  esc / h unfocus"))
+	} else {
+		b.WriteString(theme.Dim.Render("  tab: focus this tab   leader s: add   leader r: run"))
+	}
 	return b.String()
 }
 
@@ -370,23 +380,54 @@ func (m Model) renderForwardsTab(w int) string {
 	}
 	r := config.Resolve(m.cfg, c)
 	if r.SSHOptions == nil || (len(r.SSHOptions.LocalForward) == 0 && len(r.SSHOptions.RemoteForward) == 0) {
-		return theme.Dim.Render("  (no port forwards configured)")
+		return theme.Dim.Render("  (no port forwards configured — tab to focus, then `a` to add)")
+	}
+	focused := m.paneFocus == focusDetail && m.tab == TabForwards
+	// Flat list ordering: own locals, inherited locals, own remotes,
+	// inherited remotes. The forwardCursor walks locals-then-remotes
+	// across own + inherited.
+	ownLocals := 0
+	ownRemotes := 0
+	if c.SSHOptions != nil {
+		ownLocals = len(c.SSHOptions.LocalForward)
+		ownRemotes = len(c.SSHOptions.RemoteForward)
 	}
 	var b strings.Builder
+	row := 0
+	write := func(label string, inherited bool) {
+		marker := "  "
+		if focused && row == m.forwardCursor {
+			marker = theme.Selected.Render("› ")
+		}
+		s := theme.Normal.Render(label)
+		if inherited {
+			s += theme.Hint.Render("  — inherited")
+		}
+		fmt.Fprintf(&b, "%s%s\n", marker, s)
+		row++
+	}
 	if len(r.SSHOptions.LocalForward) > 0 {
 		b.WriteString(theme.Label.Render("  Local → remote"))
 		b.WriteString("\n")
-		for _, lf := range r.SSHOptions.LocalForward {
-			fmt.Fprintf(&b, "    %s\n", theme.Normal.Render(lf))
+		for i, lf := range r.SSHOptions.LocalForward {
+			write(lf, i >= ownLocals)
 		}
 	}
 	if len(r.SSHOptions.RemoteForward) > 0 {
-		b.WriteString("\n")
+		if len(r.SSHOptions.LocalForward) > 0 {
+			b.WriteString("\n")
+		}
 		b.WriteString(theme.Label.Render("  Remote → local"))
 		b.WriteString("\n")
-		for _, rf := range r.SSHOptions.RemoteForward {
-			fmt.Fprintf(&b, "    %s\n", theme.Normal.Render(rf))
+		for i, rf := range r.SSHOptions.RemoteForward {
+			write(rf, i >= ownRemotes)
 		}
+	}
+	b.WriteString("\n")
+	if focused {
+		b.WriteString(theme.Dim.Render("  j/k select  d delete  a add  esc / h unfocus"))
+	} else {
+		b.WriteString(theme.Dim.Render("  tab: focus this tab   :addforward: add"))
 	}
 	return b.String()
 }
@@ -582,7 +623,8 @@ func (m Model) renderPalette() string {
 			b.WriteString("\n\n")
 			b.WriteString(theme.Dim.Render("  y: trust and connect   n: cancel"))
 		}
-	case PaletteDeleteConnection, PaletteDeleteDatabase, PaletteDeleteGroup:
+	case PaletteDeleteConnection, PaletteDeleteDatabase, PaletteDeleteGroup,
+		PaletteDeleteScript, PaletteDeleteForward:
 		b.WriteString(theme.Dim.Render("  y: delete   n/esc: cancel"))
 	case PaletteShellInit:
 		b.WriteString(m.paletteTextarea.View())
