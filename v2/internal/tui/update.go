@@ -181,9 +181,28 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Help overlay captures all keys.
 	if m.overlay == OverlayHelp {
-		if msg.String() == "?" || msg.String() == "esc" || msg.String() == "q" {
+		switch msg.String() {
+		case "?", "esc", "q":
 			m.overlay = OverlayNone
 			m.showAll = false
+			m.helpOffset = 0
+		case "j", "down":
+			m.helpOffset++
+		case "k", "up":
+			if m.helpOffset > 0 {
+				m.helpOffset--
+			}
+		case "pgdown", " ":
+			m.helpOffset += 10
+		case "pgup", "b":
+			m.helpOffset -= 10
+			if m.helpOffset < 0 {
+				m.helpOffset = 0
+			}
+		case "g":
+			m.helpOffset = 0
+		case "G":
+			m.helpOffset = 1 << 30 // clamped in renderHelp
 		}
 		return m, nil
 	}

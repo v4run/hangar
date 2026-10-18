@@ -630,29 +630,58 @@ func (m Model) renderPalette() string {
 }
 
 func (m Model) renderHelp() string {
+	// Build the full body once, then window it based on helpOffset.
+	var body strings.Builder
+	body.WriteString(theme.Label.Render("Keybindings"))
+	body.WriteString("\n")
+	for _, group := range m.keymap.FullHelp() {
+		for _, k := range group {
+			fmt.Fprintf(&body, "  %-14s  %s\n", theme.Cursor.Render(k.Help().Key), theme.Normal.Render(k.Help().Desc))
+		}
+		body.WriteString("\n")
+	}
+	body.WriteString(theme.Label.Render("Commands (`:`)"))
+	body.WriteString("\n")
+	for _, c := range m.commands() {
+		fmt.Fprintf(&body, "  %-14s  %s\n", theme.Cursor.Render(":"+c.Name), theme.Normal.Render(c.Help))
+	}
+	body.WriteString("\n")
+	body.WriteString(theme.Label.Render("Leader (space)"))
+	body.WriteString("\n")
+	for _, lb := range m.leaderBindings() {
+		fmt.Fprintf(&body, "  %-14s  %s\n", theme.Cursor.Render("space "+lb.Key), theme.Normal.Render(lb.Desc))
+	}
+
+	lines := strings.Split(strings.TrimRight(body.String(), "\n"), "\n")
+	// Reserve 4 rows: title, blank, blank, footer.
+	maxBody := m.height - 8
+	if maxBody < 5 {
+		maxBody = 5
+	}
+	offset := m.helpOffset
+	maxOffset := len(lines) - maxBody
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	end := offset + maxBody
+	if end > len(lines) {
+		end = len(lines)
+	}
+	window := strings.Join(lines[offset:end], "\n")
+
 	var b strings.Builder
 	b.WriteString(theme.Title.Render("Hangar v2 — help"))
 	b.WriteString("\n\n")
-	b.WriteString(theme.Label.Render("Keybindings"))
-	b.WriteString("\n")
-	for _, group := range m.keymap.FullHelp() {
-		for _, k := range group {
-			fmt.Fprintf(&b, "  %-14s  %s\n", theme.Cursor.Render(k.Help().Key), theme.Normal.Render(k.Help().Desc))
-		}
+	b.WriteString(window)
+	b.WriteString("\n\n")
+	if offset > 0 || end < len(lines) {
+		scrollHint := fmt.Sprintf("  %d-%d / %d  (j/k pgup/pgdn g/G to scroll)", offset+1, end, len(lines))
+		b.WriteString(theme.Hint.Render(scrollHint))
 		b.WriteString("\n")
 	}
-	b.WriteString(theme.Label.Render("Commands (`:`)"))
-	b.WriteString("\n")
-	for _, c := range m.commands() {
-		fmt.Fprintf(&b, "  %-14s  %s\n", theme.Cursor.Render(":"+c.Name), theme.Normal.Render(c.Help))
-	}
-	b.WriteString("\n")
-	b.WriteString(theme.Label.Render("Leader (space)"))
-	b.WriteString("\n")
-	for _, lb := range m.leaderBindings() {
-		fmt.Fprintf(&b, "  %-14s  %s\n", theme.Cursor.Render("space "+lb.Key), theme.Normal.Render(lb.Desc))
-	}
-	b.WriteString("\n")
 	b.WriteString(theme.Dim.Render("  esc / ? to close"))
 	return paddedBox(b.String(), minInt(72, m.width-10))
 }

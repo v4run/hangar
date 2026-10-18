@@ -111,9 +111,10 @@ type Model struct {
 	mode Mode
 
 	// Help footer (bubbles/help).
-	help    help.Model
-	keymap  KeyMap
-	showAll bool // ? toggles full help overlay
+	help       help.Model
+	keymap     KeyMap
+	showAll    bool // ? toggles full help overlay
+	helpOffset int  // vertical scroll offset for the help overlay
 
 	// Toast / status message.
 	toast     string
