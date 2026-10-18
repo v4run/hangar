@@ -807,6 +807,8 @@ func (m Model) renderPalette() string {
 		b.WriteString(theme.Dim.Render("  y: delete   n/esc: cancel"))
 	case PaletteDeleteGroup:
 		b.WriteString(theme.Dim.Render("  y: re-parent children   Y: cascade delete   n/esc: cancel"))
+	case PaletteQuitConfirm:
+		b.WriteString(theme.Dim.Render("  y: quit   n/esc: stay"))
 	case PaletteShellInit:
 		b.WriteString(m.paletteTextarea.View())
 		b.WriteString("\n\n")

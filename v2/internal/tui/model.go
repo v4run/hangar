@@ -84,6 +84,7 @@ const (
 	PaletteAddForward
 	PaletteDeleteScript
 	PaletteDeleteForward
+	PaletteQuitConfirm
 )
 
 // Tab names a detail-pane tab.

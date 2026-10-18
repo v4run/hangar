@@ -92,6 +92,15 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.submitPalette()
 		}
 		return *m, nil
+	case PaletteQuitConfirm:
+		switch msg.String() {
+		case "esc", "n", "N":
+			m.closePalette()
+			return *m, nil
+		case "y", "Y", "q":
+			return *m, tea.Quit
+		}
+		return *m, nil
 	case PaletteDeleteGroup:
 		switch msg.String() {
 		case "esc", "n", "N":
@@ -662,6 +671,20 @@ func (m *Model) saveForward() (tea.Model, tea.Cmd) {
 	m.closePalette()
 	m.setToast("forward added", toastOK)
 	return *m, nil
+}
+
+// openQuitConfirm presents a y/n palette instead of exiting
+// immediately — bound to q. ctrl+c still quits without confirming
+// (power-user escape hatch).
+func (m *Model) openQuitConfirm() tea.Cmd {
+	m.palette = paletteState{
+		kind:    PaletteQuitConfirm,
+		title:   "Quit Hangar?",
+		message: "Any unsaved form inputs will be discarded.\n\n  y: quit   n / esc: stay",
+	}
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return nil
 }
 
 func (m *Model) openDeleteGroupPalette(g *config.Group) tea.Cmd {

@@ -312,7 +312,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Browse-mode keys.
 	switch {
 	case key.Matches(msg, m.keymap.Quit):
-		return m, tea.Quit
+		return m, m.openQuitConfirm()
 	case key.Matches(msg, m.keymap.Help):
 		m.overlay = OverlayHelp
 		m.showAll = true

@@ -231,4 +231,4 @@ func (m *Model) cmdHelp(_ string) tea.Cmd {
 	m.showAll = true
 	return nil
 }
-func (m *Model) cmdQuit(_ string) tea.Cmd { return tea.Quit }
+func (m *Model) cmdQuit(_ string) tea.Cmd { return m.openQuitConfirm() }
