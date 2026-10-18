@@ -152,9 +152,9 @@ func (m Model) renderSidebar(w, h int) string {
 
 func (m Model) renderRow(r row, selected bool, width int) string {
 	if r.kind == rowSectionHeader {
-		chev := "▾"
+		chev := "-"
 		if r.group.Name == "Recent" && m.recentCollapsed {
-			chev = "▸"
+			chev = "+"
 		}
 		line := "  " + chev + " " + r.group.Name
 		if selected {
@@ -166,9 +166,9 @@ func (m Model) renderRow(r row, selected bool, width int) string {
 
 	switch r.kind {
 	case rowGroup:
-		chev := "▾"
+		chev := "-"
 		if m.collapsed[r.group.ID] {
-			chev = "▸"
+			chev = "+"
 		}
 		name := r.group.Name
 		if r.depth > 4 {
