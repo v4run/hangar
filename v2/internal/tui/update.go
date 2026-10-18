@@ -247,13 +247,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keymap.Cmd):
 		return m, m.openCmdBar()
 	case key.Matches(msg, m.keymap.Leader):
-		// Space on a group row still toggles expand/collapse, as a
-		// quality-of-life override.
-		if g := m.selectedGroup(); g != nil {
-			m.collapsed[g.ID] = !m.collapsed[g.ID]
-			m.rebuildRows()
-			return m, nil
-		}
+		// Space is the leader key everywhere — do NOT short-circuit
+		// on a group row. Collapse / expand lives on enter, h, l and
+		// the arrows; the leader needs an unambiguous entry point so
+		// `space s` / `space o` work regardless of what's selected.
 		m.openLeader()
 		return m, nil
 	case key.Matches(msg, m.keymap.Down):

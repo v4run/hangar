@@ -42,6 +42,29 @@ func TestLeaderOpensScriptPalette(t *testing.T) {
 	}
 }
 
+// TestLeaderOpensWhenGroupRowSelected guards against the "space is
+// swallowed by group collapse" regression — on a group row, space
+// must still open the leader so `space s` / `space o` work after
+// moving the cursor onto a group.
+func TestLeaderOpensWhenGroupRowSelected(t *testing.T) {
+	gid := uuid.New()
+	cfg := &config.Config{
+		Schema: config.SchemaVersion,
+		Groups: []config.Group{{ID: gid, Name: "prod"}},
+	}
+	m := New(cfg, t.TempDir())
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	mm := m2.(Model)
+	// The only row is the "prod" group — cursor should land on it.
+	if mm.selectedGroup() == nil {
+		t.Fatal("expected a group row under the default cursor")
+	}
+	m3, _ := mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	if m3.(Model).overlay != OverlayLeader {
+		t.Fatalf("expected OverlayLeader after space on a group row, got %v", m3.(Model).overlay)
+	}
+}
+
 // TestLeaderOpensNotesPalette mirrors the above for `space o`.
 func TestLeaderOpensNotesPalette(t *testing.T) {
 	cfg := &config.Config{
