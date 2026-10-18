@@ -236,16 +236,28 @@ const (
 	connFieldPort
 	connFieldUser
 	connFieldKey
+	connFieldJump
 	connFieldGroup
 	connFieldTags
 	connFieldPassword
 	connFieldRemoteCmd
 	connFieldEnv
+	// --- Advanced SSH options (override the group / global chain) ---
+	connFieldFwdAgent
+	connFieldCompression
+	connFieldLocalFwd
+	connFieldRemoteFwd
+	connFieldAlive
+	connFieldAliveMax
+	connFieldHostKey
+	connFieldTTY
+	connFieldExtra
 	connFieldCount
 )
 
 var connFieldLabels = []string{
-	"Name", "Host", "Port", "User", "Key", "Group", "Tags", "Pass", "RemoteCmd", "Env",
+	"Name", "Host", "Port", "User", "Key", "Jump", "Group", "Tags", "Pass", "RemoteCmd", "Env",
+	"FwdAgent", "Compress", "LocalFwd", "RemoteFwd", "Alive", "AliveMax", "HostKey", "TTY", "Extra",
 }
 var connFieldHints = []string{
 	"required, display name",
@@ -253,10 +265,20 @@ var connFieldHints = []string{
 	"22",
 	"login user (inherited from group if blank)",
 	"~/.ssh/id_ed25519",
+	"name of a connection to use as jump host",
 	"group name path, blank for ungrouped",
 	"comma-separated",
 	"stored in keychain; or $(cmd)",
 	"run on remote after connect",
+	"KEY=value, OTHER=val",
+	"yes / no / blank",
+	"yes / no / blank",
+	"8080:localhost:80, 9090:localhost:90",
+	"3000:localhost:3000",
+	"ServerAliveInterval seconds",
+	"ServerAliveCountMax",
+	"yes / no / accept-new / blank",
+	"yes / no / force / auto / blank",
 	"KEY=value, OTHER=val",
 }
 
@@ -305,8 +327,38 @@ func (m *Model) openConnectionPalette(kind PaletteKind, title string, c *config.
 			fields[connFieldPassword].input.SetValue(pw)
 		}
 		fields[connFieldRemoteCmd].input.SetValue(c.RemoteCommand)
+		if c.JumpHost != uuid.Nil {
+			if j := findConnByID(m.cfg, c.JumpHost); j != nil {
+				fields[connFieldJump].input.SetValue(j.Name)
+			}
+		}
 		if len(c.Env) > 0 {
 			fields[connFieldEnv].input.SetValue(envMapToString(c.Env))
+		}
+		if o := c.SSHOptions; o != nil {
+			if o.ForwardAgent != nil {
+				fields[connFieldFwdAgent].input.SetValue(boolToYesNo(*o.ForwardAgent))
+			}
+			if o.Compression != nil {
+				fields[connFieldCompression].input.SetValue(boolToYesNo(*o.Compression))
+			}
+			fields[connFieldLocalFwd].input.SetValue(strings.Join(o.LocalForward, ", "))
+			fields[connFieldRemoteFwd].input.SetValue(strings.Join(o.RemoteForward, ", "))
+			if o.ServerAliveInterval != nil {
+				fields[connFieldAlive].input.SetValue(strconv.Itoa(*o.ServerAliveInterval))
+			}
+			if o.ServerAliveCountMax != nil {
+				fields[connFieldAliveMax].input.SetValue(strconv.Itoa(*o.ServerAliveCountMax))
+			}
+			fields[connFieldHostKey].input.SetValue(o.StrictHostKeyCheck)
+			fields[connFieldTTY].input.SetValue(o.RequestTTY)
+			if len(o.ExtraOptions) > 0 {
+				parts := make([]string, 0, len(o.ExtraOptions))
+				for k, v := range o.ExtraOptions {
+					parts = append(parts, k+"="+v)
+				}
+				fields[connFieldExtra].input.SetValue(strings.Join(parts, ", "))
+			}
 		}
 	}
 	for i := range fields {
@@ -1456,16 +1508,100 @@ func (m *Model) saveConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 	password := strings.TrimSpace(m.palette.fields[connFieldPassword].input.Value())
 	rc := strings.TrimSpace(m.palette.fields[connFieldRemoteCmd].input.Value())
 
+	// Resolve the Jump field (which stores a connection NAME) into a
+	// UUID.
+	var jumpID uuid.UUID
+	if jn := strings.TrimSpace(m.palette.fields[connFieldJump].input.Value()); jn != "" {
+		if j := m.connectionByName(jn); j != nil {
+			jumpID = j.ID
+		} else {
+			m.palette.err = "unknown jump-host connection: " + jn
+			return *m, nil
+		}
+	}
+
+	// SSH options from the advanced fields. nil = "nothing set at
+	// connection scope, cascade from group / global".
+	opts := &config.SSHOptions{}
+	touched := false
+	if v := parseYesNo(m.palette.fields[connFieldFwdAgent].input.Value()); v != nil {
+		opts.ForwardAgent = v
+		touched = true
+	}
+	if v := parseYesNo(m.palette.fields[connFieldCompression].input.Value()); v != nil {
+		opts.Compression = v
+		touched = true
+	}
+	if lf := splitAndTrim(m.palette.fields[connFieldLocalFwd].input.Value(), ","); len(lf) > 0 {
+		opts.LocalForward = lf
+		touched = true
+	}
+	if rf := splitAndTrim(m.palette.fields[connFieldRemoteFwd].input.Value(), ","); len(rf) > 0 {
+		opts.RemoteForward = rf
+		touched = true
+	}
+	if s := strings.TrimSpace(m.palette.fields[connFieldAlive].input.Value()); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			opts.ServerAliveInterval = &n
+			touched = true
+		} else {
+			m.palette.err = "Alive must be an integer"
+			return *m, nil
+		}
+	}
+	if s := strings.TrimSpace(m.palette.fields[connFieldAliveMax].input.Value()); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			opts.ServerAliveCountMax = &n
+			touched = true
+		} else {
+			m.palette.err = "AliveMax must be an integer"
+			return *m, nil
+		}
+	}
+	if hk := strings.TrimSpace(m.palette.fields[connFieldHostKey].input.Value()); hk != "" {
+		opts.StrictHostKeyCheck = hk
+		touched = true
+	}
+	if tty := strings.TrimSpace(m.palette.fields[connFieldTTY].input.Value()); tty != "" {
+		opts.RequestTTY = tty
+		touched = true
+	}
+	if ex := strings.TrimSpace(m.palette.fields[connFieldExtra].input.Value()); ex != "" {
+		opts.ExtraOptions = map[string]string{}
+		for _, pair := range splitAndTrim(ex, ",") {
+			kv := strings.SplitN(pair, "=", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			opts.ExtraOptions[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+		if len(opts.ExtraOptions) > 0 {
+			touched = true
+		}
+	}
+	// If the user came in via ssh-import, m.paletteOpts carried the
+	// parsed options forward; merge them so an import that doesn't
+	// touch the advanced fields still persists.
+	if !touched && m.paletteOpts != nil {
+		opts = m.paletteOpts
+		touched = true
+	}
+	var finalOpts *config.SSHOptions
+	if touched {
+		finalOpts = opts
+	}
+
 	conn := config.Connection{
 		Name:          name,
 		Host:          host,
 		Port:          port,
 		User:          strings.TrimSpace(m.palette.fields[connFieldUser].input.Value()),
 		IdentityFile:  strings.TrimSpace(m.palette.fields[connFieldKey].input.Value()),
+		JumpHost:      jumpID,
 		Group:         gID,
 		Tags:          tags,
 		RemoteCommand: rc,
-		SSHOptions:    m.paletteOpts,
+		SSHOptions:    finalOpts,
 		Env:           parseEnvMap(m.palette.fields[connFieldEnv].input.Value()),
 	}
 	if sshauth.IsCommandValue(password) {
