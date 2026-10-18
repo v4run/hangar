@@ -474,17 +474,37 @@ func (m Model) renderCmdBar() string {
 }
 
 func (m Model) renderLeader() string {
+	bindings := m.leaderBindings()
+	maxBody := m.leaderMaxBody()
+	offset := m.leaderOffset
+	maxOff := len(bindings) - maxBody
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if offset > maxOff {
+		offset = maxOff
+	}
+	end := offset + maxBody
+	if end > len(bindings) {
+		end = len(bindings)
+	}
+
 	var b strings.Builder
 	b.WriteString(theme.Title.Render("Leader"))
 	b.WriteString("\n\n")
-	for _, lb := range m.leaderBindings() {
+	for _, lb := range bindings[offset:end] {
 		fmt.Fprintf(&b, "  %s  %s\n",
 			theme.Cursor.Render(lb.Key),
 			theme.Normal.Render(lb.Desc))
 	}
 	b.WriteString("\n")
+	if offset > 0 || end < len(bindings) {
+		scrollHint := fmt.Sprintf("  %d-%d / %d  (↑/↓ pgup/pgdn to scroll)", offset+1, end, len(bindings))
+		b.WriteString(theme.Hint.Render(scrollHint))
+		b.WriteString("\n")
+	}
 	b.WriteString(theme.Dim.Render("  esc  cancel"))
-	return paddedBox(b.String(), 36)
+	return paddedBox(b.String(), 44)
 }
 
 func (m Model) renderPicker() string {

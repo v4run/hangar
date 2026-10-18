@@ -113,8 +113,9 @@ type Model struct {
 	// Help footer (bubbles/help).
 	help       help.Model
 	keymap     KeyMap
-	showAll    bool // ? toggles full help overlay
-	helpOffset int  // vertical scroll offset for the help overlay
+	showAll      bool // ? toggles full help overlay
+	helpOffset   int  // vertical scroll offset for the help overlay
+	leaderOffset int  // vertical scroll offset for the leader overlay
 
 	// Toast / status message.
 	toast     string

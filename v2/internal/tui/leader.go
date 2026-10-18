@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -63,16 +62,66 @@ func (m *Model) leaderBindings() []leaderBinding {
 // to one of the registered bindings or dismisses the overlay.
 func (m *Model) openLeader() {
 	m.overlay = OverlayLeader
+	m.leaderOffset = 0
 }
 
 // closeLeader dismisses the overlay without running anything.
 func (m *Model) closeLeader() {
 	m.overlay = OverlayNone
+	m.leaderOffset = 0
+}
+
+// leaderMaxBody is the number of binding rows the overlay body can
+// show inside the paddedBox at the current terminal height.
+func (m Model) leaderMaxBody() int {
+	// Reserve 4 lines (title + blank + blank + footer) and 2 for the
+	// paddedBox border.
+	max := m.height - 8
+	if max < 4 {
+		max = 4
+	}
+	return max
+}
+
+// leaderMaxOffset is the largest offset that still reveals new
+// bindings — holding `down` past it is a no-op.
+func (m Model) leaderMaxOffset() int {
+	max := len(m.leaderBindings()) - m.leaderMaxBody()
+	if max < 0 {
+		return 0
+	}
+	return max
 }
 
 func (m *Model) handleLeaderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if key.Matches(msg, m.keymap.Esc) {
+	// Scroll keys. These intentionally use arrows + pgup/pgdn (not
+	// j/k) so a future binding on j/k wouldn't be silently stolen.
+	maxOff := m.leaderMaxOffset()
+	switch msg.String() {
+	case "esc":
 		m.closeLeader()
+		return m, nil
+	case "down":
+		if m.leaderOffset < maxOff {
+			m.leaderOffset++
+		}
+		return m, nil
+	case "up":
+		if m.leaderOffset > 0 {
+			m.leaderOffset--
+		}
+		return m, nil
+	case "pgdown":
+		m.leaderOffset += 10
+		if m.leaderOffset > maxOff {
+			m.leaderOffset = maxOff
+		}
+		return m, nil
+	case "pgup":
+		m.leaderOffset -= 10
+		if m.leaderOffset < 0 {
+			m.leaderOffset = 0
+		}
 		return m, nil
 	}
 	s := msg.String()
