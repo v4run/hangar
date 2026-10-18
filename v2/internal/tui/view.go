@@ -288,6 +288,7 @@ func engineBadge(e string) string {
 // --- detail pane ---
 
 func (m Model) renderDetail(w, h int) string {
+	breadcrumb := m.renderDetailBreadcrumb(w)
 	tabs := m.renderTabs(w)
 	body := ""
 	switch m.tab {
@@ -318,7 +319,47 @@ func (m Model) renderDetail(w, h int) string {
 		endL = len(lines)
 	}
 	windowed := strings.Join(lines[off:endL], "\n")
-	return tabs + "\n\n" + windowed
+	return breadcrumb + "\n" + tabs + "\n\n" + windowed
+}
+
+// renderDetailBreadcrumb shows the sidebar selection as a path at
+// the top of the right pane — so the user always sees WHICH row the
+// detail view is for even if the sidebar scrolled it out of view.
+func (m Model) renderDetailBreadcrumb(w int) string {
+	r := m.selectedRow()
+	parts := []string{}
+	switch {
+	case r.conn != nil:
+		if p := config.GroupPath(m.cfg, r.conn.Group); p != "" {
+			parts = append(parts, strings.Split(p, "/")...)
+		}
+		parts = append(parts, r.conn.Name)
+	case r.db != nil:
+		if p := config.GroupPath(m.cfg, r.db.Group); p != "" {
+			parts = append(parts, strings.Split(p, "/")...)
+		}
+		parts = append(parts, r.db.Name)
+	case r.group != nil:
+		if p := config.GroupPath(m.cfg, r.group.ID); p != "" {
+			parts = append(parts, strings.Split(p, "/")...)
+		}
+	}
+	if len(parts) == 0 {
+		return theme.Hint.Render("  (nothing selected)")
+	}
+	// Dim intermediate segments, bold the leaf.
+	out := ""
+	for i, p := range parts {
+		if i > 0 {
+			out += theme.Hint.Render(" › ")
+		}
+		if i == len(parts)-1 {
+			out += theme.Normal.Bold(true).Render(p)
+		} else {
+			out += theme.Dim.Render(p)
+		}
+	}
+	return truncate(out, w)
 }
 
 func (m Model) renderTabs(w int) string {
