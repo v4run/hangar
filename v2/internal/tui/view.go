@@ -303,11 +303,15 @@ func (m Model) renderDetail(w, h int) string {
 }
 
 func (m Model) renderTabs(w int) string {
+	// Active tab uses fg + bold (no background) — theme.Selected now
+	// carries a BgAlt highlight meant for sidebar rows, which looked
+	// out of place on the top-of-pane tab bar.
+	activeStyle := lipgloss.NewStyle().Foreground(theme.Accent).Bold(true)
 	var parts []string
 	for t := Tab(0); t < Tab(tabCount); t++ {
 		label := t.String()
 		if t == m.tab {
-			parts = append(parts, theme.Selected.Render("● "+label))
+			parts = append(parts, activeStyle.Render("● "+label))
 		} else {
 			parts = append(parts, theme.Dim.Render("  "+label))
 		}
