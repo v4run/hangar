@@ -93,9 +93,9 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc", "n", "N":
 			m.closePalette()
 			return *m, nil
-		case "y", "Y", "r", "R", "ctrl+s":
+		case "y", "ctrl+s":
 			return m.deleteGroup(m.palette.target)
-		case "D":
+		case "Y":
 			return m.deleteGroupCascade(m.palette.target)
 		}
 		return *m, nil
@@ -632,10 +632,10 @@ func (m *Model) openDeleteGroupPalette(g *config.Group) tea.Cmd {
 	}
 	msg := fmt.Sprintf(
 		"Delete group %q.\n\n"+
-			"  r / y   re-parent %d direct subgroup(s) + %d direct connection(s) to its parent.\n"+
-			"  D       cascade: delete this group AND everything beneath it\n"+
-			"            (%d subgroup(s), %d connection(s), %d database(s)).\n"+
-			"  n / esc cancel",
+			"  y        re-parent %d direct subgroup(s) + %d direct connection(s) to its parent.\n"+
+			"  Y        cascade: delete this group AND everything beneath it\n"+
+			"             (%d subgroup(s), %d connection(s), %d database(s)).\n"+
+			"  n / esc  cancel",
 		g.Name, directKids, directConns, descGroups, descConns, descDBs,
 	)
 	m.palette = paletteState{

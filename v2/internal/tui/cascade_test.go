@@ -42,8 +42,8 @@ func TestCascadeDeleteRemovesWholeSubtree(t *testing.T) {
 	if m3.(Model).palette.kind != PaletteDeleteGroup {
 		t.Fatalf("expected PaletteDeleteGroup, got %v", m3.(Model).palette.kind)
 	}
-	// Press shift+D for cascade.
-	m4, _ := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("D")})
+	// Press shift+Y for cascade.
+	m4, _ := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
 	mm = m4.(Model)
 	if len(mm.cfg.Groups) != 0 {
 		t.Fatalf("expected all groups removed, got %+v", mm.cfg.Groups)
