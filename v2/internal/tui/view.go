@@ -75,10 +75,13 @@ func (m Model) sidebarWidth() int {
 
 func (m Model) renderHeader() string {
 	path := ""
-	if c := m.rows[clampIndex(m.cursor, len(m.rows))].conn; c != nil {
-		path = config.GroupPath(m.cfg, c.Group)
-	} else if g := m.rows[clampIndex(m.cursor, len(m.rows))].group; g != nil {
-		path = config.GroupPath(m.cfg, g.ID)
+	if len(m.rows) > 0 {
+		r := m.rows[clampIndex(m.cursor, len(m.rows))]
+		if r.conn != nil {
+			path = config.GroupPath(m.cfg, r.conn.Group)
+		} else if r.group != nil {
+			path = config.GroupPath(m.cfg, r.group.ID)
+		}
 	}
 	brand := theme.Title.Render(" ▞▚  hangar ")
 	breadcrumb := ""
