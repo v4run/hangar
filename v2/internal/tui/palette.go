@@ -1533,6 +1533,14 @@ func (m *Model) saveDatabase(id uuid.UUID) (tea.Model, tea.Cmd) {
 		d.ID = id
 		for i := range m.cfg.Databases {
 			if m.cfg.Databases[i].ID == id {
+				// Preserve fields the DB palette doesn't own —
+				// otherwise edit would silently clear them.
+				existing := m.cfg.Databases[i]
+				d.Tags = existing.Tags
+				d.Notes = existing.Notes
+				d.TunnelVia = existing.TunnelVia
+				d.Env = existing.Env
+				d.Order = existing.Order
 				m.cfg.Databases[i] = d
 				break
 			}
@@ -1705,13 +1713,15 @@ func (m *Model) saveConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 		conn.ID = id
 		for i := range m.cfg.Connections {
 			if m.cfg.Connections[i].ID == id {
-				// Preserve notes / scripts / shell init that we don't
-				// expose in this minimal form.
+				// Preserve fields the connection palette doesn't own.
+				// SSHOptions IS now in this form (used to be
+				// preserved from `existing` — that was eating every
+				// edit to the advanced fields).
 				existing := m.cfg.Connections[i]
-				conn.Notes = existing.Notes
-				conn.Scripts = existing.Scripts
-				conn.ShellInit = existing.ShellInit
-				conn.SSHOptions = existing.SSHOptions
+				conn.Notes = existing.Notes       // notes palette
+				conn.Scripts = existing.Scripts   // scripts tab
+				conn.ShellInit = existing.ShellInit // shellinit palette (i / I)
+				conn.Order = existing.Order       // sibling sort position
 				m.cfg.Connections[i] = conn
 				break
 			}
@@ -1824,6 +1834,31 @@ func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 		if rf := splitAndTrim(m.palette.fields[groupFieldRemoteFwd].input.Value(), ","); len(rf) > 0 {
 			opts.RemoteForward = rf
 			touched = true
+		}
+		// Preserve the SSH option fields the group palette doesn't
+		// expose (Alive, AliveMax, HostKey, TTY, Extra) — otherwise
+		// an edit to the exposed fields would silently drop them.
+		if g.SSHOptions != nil {
+			if opts.ServerAliveInterval == nil {
+				opts.ServerAliveInterval = g.SSHOptions.ServerAliveInterval
+			}
+			if opts.ServerAliveCountMax == nil {
+				opts.ServerAliveCountMax = g.SSHOptions.ServerAliveCountMax
+			}
+			if opts.StrictHostKeyCheck == "" {
+				opts.StrictHostKeyCheck = g.SSHOptions.StrictHostKeyCheck
+			}
+			if opts.RequestTTY == "" {
+				opts.RequestTTY = g.SSHOptions.RequestTTY
+			}
+			if len(opts.ExtraOptions) == 0 {
+				opts.ExtraOptions = g.SSHOptions.ExtraOptions
+			}
+			if opts.ServerAliveInterval != nil || opts.ServerAliveCountMax != nil ||
+				opts.StrictHostKeyCheck != "" || opts.RequestTTY != "" ||
+				len(opts.ExtraOptions) > 0 {
+				touched = true
+			}
 		}
 		if touched {
 			g.SSHOptions = opts
