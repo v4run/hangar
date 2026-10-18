@@ -156,11 +156,11 @@ func (m Model) renderRow(r row, selected bool, width int) string {
 		if r.group.Name == "Recent" && m.recentCollapsed {
 			chev = "▸"
 		}
-		marker := "  "
+		line := "  " + chev + " " + r.group.Name
 		if selected {
-			marker = theme.Selected.Render("› ")
+			return theme.Selected.Width(width).Render(line)
 		}
-		return marker + theme.Label.Render(chev+" "+r.group.Name)
+		return theme.Label.Render(line)
 	}
 	indent := strings.Repeat("  ", minInt(r.depth, 4))
 
@@ -211,13 +211,15 @@ func (m Model) renderRow(r row, selected bool, width int) string {
 // clipLine applies the selected-row styling or truncates to width.
 // For selected rows we strip the per-segment escape sequences first
 // — otherwise the inner `\x1b[0m` resets terminate our outer style
-// mid-line and the row doesn't look highlighted.
+// mid-line and the row doesn't look highlighted — then widen the
+// style to the full sidebar width so the highlight bar spans the row
+// (v1-style selection).
 func clipLine(line string, width int, selected bool) string {
 	if lipgloss.Width(line) > width {
 		line = truncate(line, width)
 	}
 	if selected {
-		return theme.Selected.Render(ansi.Strip(line))
+		return theme.Selected.Width(width).Render(ansi.Strip(line))
 	}
 	return line
 }
