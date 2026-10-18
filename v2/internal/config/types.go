@@ -10,12 +10,13 @@ const SchemaVersion = 2
 
 // Config is the top-level file shape.
 type Config struct {
-	Schema       int           `yaml:"schema"`
-	SSHOptions   *SSHOptions   `yaml:"ssh_options,omitempty"`
-	ShellInit    string        `yaml:"shell_init,omitempty"`
-	Groups       []Group       `yaml:"groups,omitempty"`
-	Connections  []Connection  `yaml:"connections,omitempty"`
-	Databases    []Database    `yaml:"databases,omitempty"`
+	Schema       int               `yaml:"schema"`
+	SSHOptions   *SSHOptions       `yaml:"ssh_options,omitempty"`
+	ShellInit    string            `yaml:"shell_init,omitempty"`
+	Env          map[string]string `yaml:"env,omitempty"`
+	Groups       []Group           `yaml:"groups,omitempty"`
+	Connections  []Connection      `yaml:"connections,omitempty"`
+	Databases    []Database        `yaml:"databases,omitempty"`
 }
 
 // Group is an inheritance scope. Groups form a tree via Parent (zero

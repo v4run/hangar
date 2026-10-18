@@ -16,6 +16,7 @@ import (
 type v1Config struct {
 	SSHOptions      *SSHOptions         `yaml:"ssh_options"`
 	GlobalShellInit string              `yaml:"global_shell_init"`
+	GlobalEnv       map[string]string   `yaml:"-"` // promoted from v1 config.yaml ssh_options.env_vars
 	Groups          []string            `yaml:"groups"`
 	GroupShellInit  map[string]string   `yaml:"group_shell_init"`
 	Connections     []v1Connection      `yaml:"connections"`
@@ -58,10 +59,44 @@ type v1Database struct {
 }
 
 // v1Global parses the subset of v1's ~/.hangar/config.yaml we care
-// about (global SSH options). Everything else in that file is v1
-// chrome and ignored.
+// about: global SSH options + the env_vars map that v1 nested under
+// ssh_options. Everything else in that file is v1 chrome and
+// ignored.
 type v1Global struct {
-	SSHOptions *SSHOptions `yaml:"ssh_options"`
+	SSHOptions *v1SSHOptions `yaml:"ssh_options"`
+}
+
+// v1SSHOptions mirrors v2's SSHOptions but keeps v1's env_vars field
+// so we can promote it onto cfg.Env (v2 moved env out of ssh_options
+// onto Connection / Group / Config directly).
+type v1SSHOptions struct {
+	ForwardAgent        *bool             `yaml:"forward_agent,omitempty"`
+	Compression         *bool             `yaml:"compression,omitempty"`
+	LocalForward        []string          `yaml:"local_forward,omitempty"`
+	RemoteForward       []string          `yaml:"remote_forward,omitempty"`
+	ServerAliveInterval *int              `yaml:"server_alive_interval,omitempty"`
+	ServerAliveCountMax *int              `yaml:"server_alive_count_max,omitempty"`
+	StrictHostKeyCheck  string            `yaml:"strict_host_key_checking,omitempty"`
+	RequestTTY          string            `yaml:"request_tty,omitempty"`
+	EnvVars             map[string]string `yaml:"env_vars,omitempty"`
+	ExtraOptions        map[string]string `yaml:"extra_options,omitempty"`
+}
+
+func (v *v1SSHOptions) toV2() *SSHOptions {
+	if v == nil {
+		return nil
+	}
+	return &SSHOptions{
+		ForwardAgent:        v.ForwardAgent,
+		Compression:         v.Compression,
+		LocalForward:        append([]string(nil), v.LocalForward...),
+		RemoteForward:       append([]string(nil), v.RemoteForward...),
+		ServerAliveInterval: v.ServerAliveInterval,
+		ServerAliveCountMax: v.ServerAliveCountMax,
+		StrictHostKeyCheck:  v.StrictHostKeyCheck,
+		RequestTTY:          v.RequestTTY,
+		ExtraOptions:        v.ExtraOptions,
+	}
 }
 
 // MigrateFromV1 looks for a v1 install (both ~/.hangar/connections.yaml
@@ -105,7 +140,10 @@ func MigrateFromV1() (*Config, bool, error) {
 	if data, err := os.ReadFile(filepath.Join(home, ".hangar", "config.yaml")); err == nil {
 		var g v1Global
 		if yaml.Unmarshal(data, &g) == nil && g.SSHOptions != nil {
-			v1.SSHOptions = g.SSHOptions
+			v1.SSHOptions = g.SSHOptions.toV2()
+			if len(g.SSHOptions.EnvVars) > 0 {
+				v1.GlobalEnv = g.SSHOptions.EnvVars
+			}
 			found = true
 		}
 	}
@@ -122,6 +160,7 @@ func migrateV1(v1 *v1Config) *Config {
 		Schema:     SchemaVersion,
 		SSHOptions: v1.SSHOptions,
 		ShellInit:  v1.GlobalShellInit,
+		Env:        v1.GlobalEnv,
 	}
 
 	// 1. Promote each v1 group name to a Group{} with a fresh UUID.

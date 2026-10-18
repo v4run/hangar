@@ -107,6 +107,7 @@ func Resolve(cfg *Config, conn *Connection) *Resolved {
 		note("ShellInit", ScopeGlobal, "")
 	}
 	out.SSHOptions = mergeOptions(out.SSHOptions, cfg.SSHOptions)
+	out.Env = mergeMap(out.Env, cfg.Env)
 
 	return &Resolved{
 		Connection:  &out,

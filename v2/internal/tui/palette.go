@@ -697,12 +697,13 @@ const (
 	gsFieldHostKey
 	gsFieldTTY
 	gsFieldExtra
+	gsFieldEnv
 	gsFieldCount
 )
 
 var gsFieldLabels = []string{
 	"FwdAgent", "Compress", "LocalFwd", "RemoteFwd",
-	"Alive", "AliveMax", "HostKey", "TTY", "Extra",
+	"Alive", "AliveMax", "HostKey", "TTY", "Extra", "Env",
 }
 var gsFieldHints = []string{
 	"yes / no / blank",
@@ -713,6 +714,7 @@ var gsFieldHints = []string{
 	"ServerAliveCountMax",
 	"yes / no / accept-new / blank",
 	"yes / no / force / auto / blank",
+	"KEY=value, OTHER=val",
 	"KEY=value, OTHER=val",
 }
 
@@ -748,6 +750,9 @@ func (m *Model) openGlobalSettingsPalette() tea.Cmd {
 			}
 			fields[gsFieldExtra].input.SetValue(strings.Join(parts, ", "))
 		}
+	}
+	if len(m.cfg.Env) > 0 {
+		fields[gsFieldEnv].input.SetValue(envMapToString(m.cfg.Env))
 	}
 	for i := range fields {
 		fields[i].input.CursorEnd()
@@ -822,6 +827,7 @@ func (m *Model) saveGlobalSettings() (tea.Model, tea.Cmd) {
 	} else {
 		m.cfg.SSHOptions = nil
 	}
+	m.cfg.Env = parseEnvMap(m.palette.fields[gsFieldEnv].input.Value())
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
 		m.palette.err = err.Error()
 		return *m, nil
