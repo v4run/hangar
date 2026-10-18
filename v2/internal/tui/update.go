@@ -341,11 +341,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.beginConnect(c)
 		}
 	case key.Matches(msg, m.keymap.Edit):
-		if m.paneFocus == focusDetail && m.tab == TabScripts {
-			if c := m.selectedConnection(); c != nil && m.scriptCursor < len(c.Scripts) {
-				return m, m.openEditScriptPalette(c, m.scriptCursor)
+		if m.paneFocus == focusDetail {
+			switch m.tab {
+			case TabScripts:
+				if c := m.selectedConnection(); c != nil && m.scriptCursor < len(c.Scripts) {
+					return m, m.openEditScriptPalette(c, m.scriptCursor)
+				}
+				return m, nil
+			case TabNotes:
+				if c := m.selectedConnection(); c != nil {
+					return m, m.openNotesPalette(c)
+				}
+				return m, nil
 			}
-			return m, nil
 		}
 		if c := m.selectedConnection(); c != nil {
 			return m, m.openEditConnectionPalette(c)

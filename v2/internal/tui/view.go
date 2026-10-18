@@ -437,10 +437,16 @@ func (m Model) renderNotesTab(w int) string {
 	if c == nil {
 		return theme.Dim.Render("  (nothing selected)")
 	}
-	if c.Notes == "" {
-		return theme.Dim.Render("  (no notes)")
+	focused := m.paneFocus == focusDetail && m.tab == TabNotes
+	body := "  (no notes)"
+	if c.Notes != "" {
+		body = "  " + strings.ReplaceAll(c.Notes, "\n", "\n  ")
 	}
-	return "  " + strings.ReplaceAll(c.Notes, "\n", "\n  ")
+	hint := "  tab: focus this tab   leader o: edit"
+	if focused {
+		hint = "  e: edit   esc / h: unfocus"
+	}
+	return body + "\n\n" + theme.Dim.Render(hint)
 }
 
 // --- status bar ---
