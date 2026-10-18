@@ -78,7 +78,7 @@ func (m *Model) prevField() tea.Cmd {
 func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Confirm-style palettes have no fields — handle them first.
 	switch m.palette.kind {
-	case PaletteDeleteConnection, PaletteDeleteDatabase, PaletteDeleteGroup,
+	case PaletteDeleteConnection, PaletteDeleteDatabase,
 		PaletteDeleteScript, PaletteDeleteForward:
 		switch msg.String() {
 		case "esc", "n", "N":
@@ -86,6 +86,17 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return *m, nil
 		case "y", "Y", "ctrl+s":
 			return m.submitPalette()
+		}
+		return *m, nil
+	case PaletteDeleteGroup:
+		switch msg.String() {
+		case "esc", "n", "N":
+			m.closePalette()
+			return *m, nil
+		case "y", "Y", "r", "R", "ctrl+s":
+			return m.deleteGroup(m.palette.target)
+		case "D":
+			return m.deleteGroupCascade(m.palette.target)
 		}
 		return *m, nil
 	case PaletteHostKey:
@@ -422,6 +433,10 @@ func (m *Model) submitPalette() (tea.Model, tea.Cmd) {
 	case PaletteDeleteDatabase:
 		return m.deleteDatabase(m.palette.target)
 	case PaletteDeleteGroup:
+		// Handled directly in handlePaletteKey (two actions: reparent
+		// vs cascade). submitPalette shouldn't be reached for this
+		// palette, but if ctrl+s falls through we default to the
+		// non-destructive re-parent.
 		return m.deleteGroup(m.palette.target)
 	case PaletteShellInit:
 		return m.saveShellInit()
@@ -599,20 +614,30 @@ func (m *Model) saveForward() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) openDeleteGroupPalette(g *config.Group) tea.Cmd {
-	kids := 0
+	// Count the whole subtree so the prompt is specific.
+	descGroups, descConns, descDBs := m.groupDescendantCounts(g.ID)
+	// Direct children (what re-parenting would surface at this
+	// level — informational).
+	directKids := 0
 	for i := range m.cfg.Groups {
 		if m.cfg.Groups[i].Parent == g.ID {
-			kids++
+			directKids++
 		}
 	}
-	conns := 0
+	directConns := 0
 	for i := range m.cfg.Connections {
 		if m.cfg.Connections[i].Group == g.ID {
-			conns++
+			directConns++
 		}
 	}
-	msg := fmt.Sprintf("Delete group %q? %d subgroup(s) and %d connection(s) will be re-parented to its parent. (y/n)",
-		g.Name, kids, conns)
+	msg := fmt.Sprintf(
+		"Delete group %q.\n\n"+
+			"  r / y   re-parent %d direct subgroup(s) + %d direct connection(s) to its parent.\n"+
+			"  D       cascade: delete this group AND everything beneath it\n"+
+			"            (%d subgroup(s), %d connection(s), %d database(s)).\n"+
+			"  n / esc cancel",
+		g.Name, directKids, directConns, descGroups, descConns, descDBs,
+	)
 	m.palette = paletteState{
 		kind:    PaletteDeleteGroup,
 		title:   "Delete group",
@@ -622,6 +647,107 @@ func (m *Model) openDeleteGroupPalette(g *config.Group) tea.Cmd {
 	m.overlay = OverlayPalette
 	m.mode = ModeEdit
 	return nil
+}
+
+// groupDescendantCounts returns (groups, connections, databases)
+// strictly below root — root itself is NOT counted.
+func (m *Model) groupDescendantCounts(root uuid.UUID) (int, int, int) {
+	kids := map[uuid.UUID][]uuid.UUID{}
+	for _, g := range m.cfg.Groups {
+		kids[g.Parent] = append(kids[g.Parent], g.ID)
+	}
+	// Collect every descendant group id.
+	var walk func(id uuid.UUID) []uuid.UUID
+	walk = func(id uuid.UUID) []uuid.UUID {
+		out := []uuid.UUID{id}
+		for _, c := range kids[id] {
+			out = append(out, walk(c)...)
+		}
+		return out
+	}
+	all := walk(root) // includes root
+	member := map[uuid.UUID]bool{}
+	for _, id := range all {
+		member[id] = true
+	}
+	var conns, dbs int
+	for i := range m.cfg.Connections {
+		if member[m.cfg.Connections[i].Group] {
+			conns++
+		}
+	}
+	for i := range m.cfg.Databases {
+		if member[m.cfg.Databases[i].Group] {
+			dbs++
+		}
+	}
+	return len(all) - 1, conns, dbs
+}
+
+// deleteGroupCascade removes the group plus every descendant group,
+// connection and database. Keychain passwords for every removed row
+// are cleared. Non-reversible — the delete palette makes the user
+// hit a distinct `D` to invoke it (not `y`) specifically to avoid a
+// mis-fire.
+func (m *Model) deleteGroupCascade(id uuid.UUID) (tea.Model, tea.Cmd) {
+	kids := map[uuid.UUID][]uuid.UUID{}
+	for _, g := range m.cfg.Groups {
+		kids[g.Parent] = append(kids[g.Parent], g.ID)
+	}
+	var walk func(x uuid.UUID) []uuid.UUID
+	walk = func(x uuid.UUID) []uuid.UUID {
+		out := []uuid.UUID{x}
+		for _, c := range kids[x] {
+			out = append(out, walk(c)...)
+		}
+		return out
+	}
+	all := walk(id)
+	member := map[uuid.UUID]bool{}
+	for _, g := range all {
+		member[g] = true
+	}
+	// Prune connections + clear their keychain entries.
+	remainingConns := m.cfg.Connections[:0]
+	connDeleted := 0
+	for _, c := range m.cfg.Connections {
+		if member[c.Group] {
+			_ = sshauth.DeletePassword(c.ID.String())
+			connDeleted++
+			continue
+		}
+		remainingConns = append(remainingConns, c)
+	}
+	m.cfg.Connections = remainingConns
+	// Prune databases.
+	remainingDBs := m.cfg.Databases[:0]
+	dbDeleted := 0
+	for _, d := range m.cfg.Databases {
+		if member[d.Group] {
+			_ = sshauth.DeletePassword(d.ID.String())
+			dbDeleted++
+			continue
+		}
+		remainingDBs = append(remainingDBs, d)
+	}
+	m.cfg.Databases = remainingDBs
+	// Prune groups.
+	remainingGroups := m.cfg.Groups[:0]
+	for _, g := range m.cfg.Groups {
+		if member[g.ID] {
+			continue
+		}
+		remainingGroups = append(remainingGroups, g)
+	}
+	m.cfg.Groups = remainingGroups
+	if err := config.Save(m.cfgDir, m.cfg); err != nil {
+		m.palette.err = err.Error()
+		return *m, nil
+	}
+	m.rebuildRows()
+	m.closePalette()
+	m.setToast(fmt.Sprintf("deleted %d group(s), %d connection(s), %d database(s)", len(all), connDeleted, dbDeleted), toastOK)
+	return *m, nil
 }
 
 func (m *Model) deleteGroup(id uuid.UUID) (tea.Model, tea.Cmd) {

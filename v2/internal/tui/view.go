@@ -629,9 +629,11 @@ func (m Model) renderPalette() string {
 			b.WriteString("\n\n")
 			b.WriteString(theme.Dim.Render("  y: trust and connect   n: cancel"))
 		}
-	case PaletteDeleteConnection, PaletteDeleteDatabase, PaletteDeleteGroup,
+	case PaletteDeleteConnection, PaletteDeleteDatabase,
 		PaletteDeleteScript, PaletteDeleteForward:
 		b.WriteString(theme.Dim.Render("  y: delete   n/esc: cancel"))
+	case PaletteDeleteGroup:
+		b.WriteString(theme.Dim.Render("  r / y: re-parent children   D: cascade delete   n/esc: cancel"))
 	case PaletteShellInit:
 		b.WriteString(m.paletteTextarea.View())
 		b.WriteString("\n\n")
