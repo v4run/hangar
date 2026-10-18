@@ -1,0 +1,184 @@
+// Package tui is Hangar v2's redesigned terminal UI. One Model, one
+// Update, one View — but split across files by concern (sidebar
+// tree, detail tabs, picker, cmdbar, leader, palettes).
+package tui
+
+import (
+	"time"
+
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
+
+	"github.com/v4run/hangar/v2/internal/config"
+	sshauth "github.com/v4run/hangar/v2/internal/ssh"
+)
+
+// Mode names what the next keystroke will do, surfaced as a coloured
+// chip in the status bar.
+type Mode int
+
+const (
+	ModeBrowse Mode = iota
+	ModeEdit
+	ModeConnect
+)
+
+func (m Mode) String() string {
+	switch m {
+	case ModeEdit:
+		return "EDIT"
+	case ModeConnect:
+		return "CONNECT"
+	default:
+		return "BROWSE"
+	}
+}
+
+// Overlay names which (if any) floating widget is currently painted
+// over the main view. Only one overlay is active at a time.
+type Overlay int
+
+const (
+	OverlayNone Overlay = iota
+	OverlayCmdBar
+	OverlayLeader
+	OverlayPicker
+	OverlayPalette
+	OverlayHelp
+)
+
+// PaletteKind identifies which form a floating palette is rendering.
+type PaletteKind int
+
+const (
+	PaletteNone PaletteKind = iota
+	PaletteAddConnection
+	PaletteEditConnection
+	PaletteDeleteConnection
+	PaletteAddGroup
+	PaletteEditGroup
+	PaletteHostKey
+	PaletteConfirmConnect
+)
+
+// Tab names a detail-pane tab.
+type Tab int
+
+const (
+	TabDetails Tab = iota
+	TabScripts
+	TabForwards
+	TabNotes
+	tabCount
+)
+
+func (t Tab) String() string {
+	return []string{"Details", "Scripts", "Forwards", "Notes"}[t]
+}
+
+// Model holds all v2 TUI state.
+type Model struct {
+	cfg       *config.Config
+	cfgDir    string
+	width     int
+	height    int
+
+	// Sidebar: flattened view of the group tree in render order,
+	// with expand/collapse state keyed by group ID (`uuid.Nil` for
+	// "ungrouped" section).
+	rows      []row
+	collapsed map[uuid.UUID]bool
+	cursor    int  // index into `rows`
+	offset    int  // top row visible in sidebar viewport
+
+	// Current detail tab.
+	tab Tab
+
+	// Mode indicator.
+	mode Mode
+
+	// Help footer (bubbles/help).
+	help    help.Model
+	keymap  KeyMap
+	showAll bool // ? toggles full help overlay
+
+	// Toast / status message.
+	toast     string
+	toastKind toastKind
+	toastGone time.Time
+
+	// Overlay (one at a time).
+	overlay Overlay
+
+	// Command bar state.
+	cmdInput textinput.Model
+
+	// Leader menu — just a flag; render reads from keymap.
+	// (field reserved for future per-group leader menus)
+
+	// Picker state.
+	picker pickerState
+
+	// Palette state.
+	palette paletteState
+
+	// Connection target of the current connect intent (host-key
+	// confirm path).
+	pendingConn *config.Connection
+	pendingKeys []sshauth.HostKey
+
+	// Right-pane vertical scroll offset for the detail content.
+	detailOffset int
+}
+
+// row is one sidebar line.
+type row struct {
+	kind    rowKind
+	depth   int
+	group   *config.Group
+	conn    *config.Connection
+	db      *config.Database
+}
+
+type rowKind int
+
+const (
+	rowGroup rowKind = iota
+	rowConnection
+	rowDatabase
+	rowSectionHeader // "Recent", "Ungrouped" labels
+)
+
+type toastKind int
+
+const (
+	toastOK toastKind = iota
+	toastErr
+	toastInfo
+)
+
+// New returns a fresh Model backed by cfg.
+func New(cfg *config.Config, cfgDir string) Model {
+	ti := textinput.New()
+	ti.Prompt = ":"
+	ti.Placeholder = "command"
+	ti.CharLimit = 0
+
+	m := Model{
+		cfg:       cfg,
+		cfgDir:    cfgDir,
+		collapsed: make(map[uuid.UUID]bool),
+		keymap:    DefaultKeymap(),
+		help:      help.New(),
+		cmdInput:  ti,
+	}
+	m.rebuildRows()
+	return m
+}
+
+// Init satisfies tea.Model.
+func (m Model) Init() tea.Cmd {
+	return textinput.Blink
+}
