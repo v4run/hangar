@@ -680,7 +680,7 @@ func (m *Model) openQuitConfirm() tea.Cmd {
 	m.palette = paletteState{
 		kind:    PaletteQuitConfirm,
 		title:   "Quit Hangar?",
-		message: "Any unsaved form inputs will be discarded.\n\n  y: quit   n / esc: stay",
+		message: "Any unsaved form inputs will be discarded.",
 	}
 	m.overlay = OverlayPalette
 	m.mode = ModeEdit
