@@ -63,18 +63,21 @@ func (m Model) View() string {
 
 	base := lipgloss.JoinVertical(lipgloss.Left, header, body, status)
 
-	// Overlays paint on top (with a dimmed backdrop).
+	// Overlays paint on top (with a dimmed backdrop). Anchored to
+	// the right pane so the sidebar stays visible underneath.
+	xMin := m.sidebarWidth()
+	xMax := m.width
 	switch m.overlay {
 	case OverlayCmdBar:
-		return overlayOn(base, m.renderCmdBar(), m.width, m.height)
+		return overlayOn(base, m.renderCmdBar(), m.width, m.height, xMin, xMax)
 	case OverlayLeader:
-		return overlayOn(base, m.renderLeader(), m.width, m.height)
+		return overlayOn(base, m.renderLeader(), m.width, m.height, xMin, xMax)
 	case OverlayPicker:
-		return overlayOn(base, m.renderPicker(), m.width, m.height)
+		return overlayOn(base, m.renderPicker(), m.width, m.height, xMin, xMax)
 	case OverlayPalette:
-		return overlayOn(base, m.renderPalette(), m.width, m.height)
+		return overlayOn(base, m.renderPalette(), m.width, m.height, xMin, xMax)
 	case OverlayHelp:
-		return overlayOn(base, m.renderHelp(), m.width, m.height)
+		return overlayOn(base, m.renderHelp(), m.width, m.height, xMin, xMax)
 	}
 	return base
 }
@@ -719,7 +722,7 @@ func (m Model) renderCmdBar() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(theme.Dim.Render("  tab: autocomplete   enter: run   esc: cancel"))
-	return paddedBox(b.String(), m.modalWidth(60, 100))
+	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(14, 20)), m.modalWidth(60, 100))
 }
 
 func (m Model) renderLeader() string {
@@ -753,7 +756,7 @@ func (m Model) renderLeader() string {
 		b.WriteString("\n")
 	}
 	b.WriteString(theme.Dim.Render("  esc  cancel"))
-	return paddedBox(b.String(), m.modalWidth(50, 70))
+	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(12, 20)), m.modalWidth(50, 70))
 }
 
 func (m Model) renderPicker() string {
@@ -859,7 +862,7 @@ func (m Model) renderPicker() string {
 	b.WriteString(row.String())
 	b.WriteString("\n")
 	b.WriteString(theme.Dim.Render("  ↑/↓: pick   enter: select   esc: cancel"))
-	return paddedBox(b.String(), width)
+	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(16, 24)), width)
 }
 
 // padRight pads s with trailing spaces so its DISPLAY width is w.
@@ -983,7 +986,7 @@ func (m Model) renderPalette() string {
 		b.WriteString("\n\n")
 		b.WriteString(theme.ErrorText.Render("  " + m.palette.err))
 	}
-	return paddedBox(b.String(), m.modalWidth(80, 120))
+	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(18, 30)), m.modalWidth(80, 120))
 }
 
 // helpBodyLines returns the full help body as one line per entry.
@@ -1062,7 +1065,7 @@ func (m Model) renderHelp() string {
 		b.WriteString("\n")
 	}
 	b.WriteString(theme.Dim.Render("  esc / ? to close"))
-	return paddedBox(b.String(), m.modalWidth(72, 110))
+	return paddedBox(padBoxToHeight(b.String(), m.modalHeight(18, 30)), m.modalWidth(72, 110))
 }
 
 // --- helpers ---
@@ -1109,24 +1112,56 @@ func findDBByID(cfg *config.Config, id uuid.UUID) *config.Database {
 	return nil
 }
 
-// modalWidth returns a comfortable modal width for the current
-// terminal, clamped to [preferredMin, preferredMax] but never
-// exceeding (terminalWidth - 4) so the border always fits.
+// modalWidth returns a comfortable modal width scaled against the
+// right pane (modals are anchored over the detail area, not the
+// whole terminal, so the sidebar stays visible). Clamped to
+// [preferredMin, preferredMax] and never exceeds (rightPane - 4).
 func (m Model) modalWidth(preferredMin, preferredMax int) int {
-	target := m.width * 3 / 4 // 75% of the terminal
+	rightW := m.width - m.sidebarWidth()
+	target := rightW * 9 / 10 // 90% of the right pane
 	if target < preferredMin {
 		target = preferredMin
 	}
 	if target > preferredMax {
 		target = preferredMax
 	}
-	if target > m.width-4 {
-		target = m.width - 4
+	if target > rightW-4 {
+		target = rightW - 4
 	}
 	if target < 20 {
 		target = 20
 	}
 	return target
+}
+
+// modalHeight returns a comfortable modal content height, scaled
+// against terminal height. Clamped to [min, max].
+func (m Model) modalHeight(min, max int) int {
+	target := m.height * 8 / 10 // 80% of terminal height
+	if target < min {
+		target = min
+	}
+	if target > max {
+		target = max
+	}
+	if target > m.height-4 {
+		target = m.height - 4
+	}
+	if target < 5 {
+		target = 5
+	}
+	return target
+}
+
+// padBoxToHeight ensures `s` is at least `h` lines tall by
+// appending blank lines; lipgloss.Pane.Height would do the same
+// but we're mixing styled builders so the explicit pad is simpler.
+func padBoxToHeight(s string, h int) string {
+	lines := strings.Count(s, "\n") + 1
+	if lines >= h {
+		return s
+	}
+	return s + strings.Repeat("\n", h-lines)
 }
 
 func paddedBox(s string, width int) string {

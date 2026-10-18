@@ -9,14 +9,12 @@ import (
 	"github.com/v4run/hangar/v2/internal/tui/theme"
 )
 
-// overlayOn paints `overlay` centered on top of `base`, with the
-// base's visible region dimmed. Unlike lipgloss.Place, which simply
-// outputs the overlay against whitespace, this walks `base` line-
-// by-line, strips its ANSI styling to prevent escape-sequence
-// bleeding, re-dyes the plain text in the muted color, and splices
-// the overlay into the middle. The overlay keeps its own styling
-// because it's rendered on top.
-func overlayOn(base, overlay string, width, height int) string {
+// overlayOn paints `overlay` on top of `base`, dimmed-backdrop
+// style. The overlay is centered inside the HORIZONTAL window
+// [xMin, xMax) rather than the full terminal, so callers can
+// anchor it over the right pane while the sidebar stays legible on
+// the left.
+func overlayOn(base, overlay string, width, height, xMin, xMax int) string {
 	// Strip ANSI from base once — otherwise slicing by cell count
 	// can split an escape mid-sequence and leak `\x1b[38;…` into
 	// the user's terminal, which is exactly the garbage you'd see
@@ -34,11 +32,19 @@ func overlayOn(base, overlay string, width, height int) string {
 	if ovH > height {
 		ovH = height
 	}
-	if ovW > width {
-		ovW = width
+	// Clamp horizontal anchor + width to the requested window.
+	if xMin < 0 {
+		xMin = 0
+	}
+	if xMax <= xMin || xMax > width {
+		xMax = width
+	}
+	windowW := xMax - xMin
+	if ovW > windowW {
+		ovW = windowW
 	}
 	top := (height - ovH) / 2
-	left := (width - ovW) / 2
+	left := xMin + (windowW-ovW)/2
 	if top < 0 {
 		top = 0
 	}
