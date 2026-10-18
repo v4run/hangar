@@ -352,7 +352,16 @@ func (m *Model) openConnectionPalette(kind PaletteKind, title string, c *config.
 		if i == connFieldPassword {
 			ti.EchoMode = textinput.EchoPassword
 		}
-		fields[i] = paletteField{label: connFieldLabels[i], hint: connFieldHints[i], input: ti}
+		pf := paletteField{label: connFieldLabels[i], hint: connFieldHints[i], input: ti}
+		switch i {
+		case connFieldFwdAgent, connFieldCompression:
+			pf.choices = yesNoChoices
+		case connFieldHostKey:
+			pf.choices = hostKeyChoices
+		case connFieldTTY:
+			pf.choices = requestTTYChoices
+		}
+		fields[i] = pf
 	}
 	var initialTags []string
 	if c != nil {
@@ -508,7 +517,12 @@ func (m *Model) openGroupPalette(kind PaletteKind, title string, g *config.Group
 		ti := textinput.New()
 		ti.Prompt = ""
 		ti.Placeholder = groupFieldHints[i]
-		fields[i] = paletteField{label: groupFieldLabels[i], hint: groupFieldHints[i], input: ti}
+		pf := paletteField{label: groupFieldLabels[i], hint: groupFieldHints[i], input: ti}
+		switch i {
+		case groupFieldFwdAgent, groupFieldCompression:
+			pf.choices = yesNoChoices
+		}
+		fields[i] = pf
 	}
 	var initialTags []string
 	if g != nil {
@@ -820,7 +834,16 @@ func (m *Model) openGlobalSettingsPalette() tea.Cmd {
 		ti := textinput.New()
 		ti.Prompt = ""
 		ti.Placeholder = gsFieldHints[i]
-		fields[i] = paletteField{label: gsFieldLabels[i], hint: gsFieldHints[i], input: ti}
+		pf := paletteField{label: gsFieldLabels[i], hint: gsFieldHints[i], input: ti}
+		switch i {
+		case gsFieldFwdAgent, gsFieldCompression:
+			pf.choices = yesNoChoices
+		case gsFieldHostKey:
+			pf.choices = hostKeyChoices
+		case gsFieldTTY:
+			pf.choices = requestTTYChoices
+		}
+		fields[i] = pf
 	}
 	if o := m.cfg.SSHOptions; o != nil {
 		if o.ForwardAgent != nil {
@@ -1383,6 +1406,14 @@ var dbFieldHints = []string{
 }
 
 var dbEngineChoices = []string{"postgres", "mysql", "redis", "sqlite"}
+
+// Choice sets for the SSH advanced fields. Blank is explicitly a
+// choice — it means "not set at this scope, inherit from the chain".
+var (
+	yesNoChoices       = []string{"", "yes", "no"}
+	hostKeyChoices     = []string{"", "yes", "no", "accept-new"}
+	requestTTYChoices  = []string{"", "yes", "no", "force", "auto"}
+)
 
 func (m *Model) openAddDatabasePalette() tea.Cmd {
 	return m.openDatabasePalette(PaletteAddDatabase, "New Database", nil)

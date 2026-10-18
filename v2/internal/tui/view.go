@@ -932,15 +932,23 @@ func (m Model) renderPalette() string {
 			switch {
 			case len(f.choices) > 0:
 				// Cycle field — render as `< value >` with chevrons
-				// that look like dropdown handles.
+				// that look like dropdown handles. Blank values show
+				// as "(inherit)" so an empty slot in a yes/no/blank
+				// list reads correctly.
 				cur := f.input.Value()
+				label := cur
+				if cur == "" {
+					label = theme.Hint.Render("(inherit)")
+				} else {
+					label = theme.Normal.Render(cur)
+				}
 				chev := theme.Hint.Render("‹")
 				chevR := theme.Hint.Render("›")
 				if i == focused {
 					chev = theme.Cursor.Render("‹")
 					chevR = theme.Cursor.Render("›")
 				}
-				val = chev + " " + theme.Normal.Render(cur) + " " + chevR
+				val = chev + " " + label + " " + chevR
 			case m.paletteUseTags && i == m.palette.tagFieldIdx:
 				switch {
 				case i == focused && m.paletteEditing:
