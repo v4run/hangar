@@ -639,35 +639,48 @@ func (m Model) renderPalette() string {
 		b.WriteString("\n\n")
 		b.WriteString(theme.Dim.Render("  ctrl+s: save   esc: cancel"))
 	default:
-		// Field-grid palette. We compute an inner viewport around the
-		// focused field so a very long form doesn't overflow the
-		// palette box on a short terminal.
+		// Field-grid palette. Two modes: nav (j/k selects a row,
+		// `›` marker on the selected one) and edit (keystrokes go
+		// to the focused textinput, cursor renders as part of
+		// input.View).
 		focused := m.palette.focus
 		rows := make([]string, len(m.palette.fields))
 		for i, f := range m.palette.fields {
-			lab := theme.Label.Render(fmt.Sprintf("  %-9s ", f.label))
+			marker := "   "
+			if i == focused {
+				if m.paletteEditing {
+					marker = theme.Cursor.Render(" ◆ ")
+				} else {
+					marker = theme.Selected.Render(" › ")
+				}
+			}
+			lab := theme.Label.Render(fmt.Sprintf("%-9s ", f.label))
 			var val string
 			if m.paletteUseTags && i == m.palette.tagFieldIdx {
-				if i == focused {
+				switch {
+				case i == focused && m.paletteEditing:
 					val = m.paletteTags.View()
-				} else if len(m.paletteTags.chips) > 0 {
+				case len(m.paletteTags.chips) > 0:
 					val = m.paletteTags.View()
-				} else {
+				default:
 					val = theme.Hint.Render("(no tags)")
 				}
-			} else if i == focused {
+			} else if i == focused && m.paletteEditing {
 				val = f.input.View()
 			} else {
 				v := f.input.Value()
 				if f.input.EchoMode == textinput.EchoPassword && v != "" {
 					v = strings.Repeat("•", len([]rune(v)))
 				}
-				val = theme.Dim.Render(v)
 				if v == "" {
 					val = theme.Hint.Render(f.hint)
+				} else if i == focused {
+					val = theme.Normal.Render(v)
+				} else {
+					val = theme.Dim.Render(v)
 				}
 			}
-			rows[i] = lab + val
+			rows[i] = marker + lab + val
 		}
 		// clamp to palette height — show a window around focus.
 		maxRows := 12
@@ -690,7 +703,11 @@ func (m Model) renderPalette() string {
 			b.WriteString(theme.Hint.Render(fmt.Sprintf("  ▼ %d more\n", len(rows)-end)))
 		}
 		b.WriteString("\n")
-		b.WriteString(theme.Dim.Render("  tab: next   shift+tab: prev   enter: next / save   ctrl+s: save   esc: cancel"))
+		if m.paletteEditing {
+			b.WriteString(theme.Dim.Render("  typing live   enter / esc: back to nav   ctrl+s: save"))
+		} else {
+			b.WriteString(theme.Dim.Render("  j/k: select   enter / i: edit   ctrl+s: save   esc: cancel"))
+		}
 	}
 	if m.palette.err != "" {
 		b.WriteString("\n\n")

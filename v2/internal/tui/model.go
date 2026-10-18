@@ -161,6 +161,7 @@ type Model struct {
 	paletteTags       tagChips           // tag-chip editor for connection + group palettes
 	paletteUseTA      bool               // true when the active palette owns the textarea
 	paletteUseTags    bool               // true when the active palette owns tagChips
+	paletteEditing    bool               // nav mode (j/k select) vs edit mode (keystrokes go to the focused field)
 	spinner           spinner.Model      // tick-driven busy indicator for host-key scans etc.
 	spinning          bool
 

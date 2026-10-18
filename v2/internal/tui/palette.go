@@ -38,6 +38,7 @@ func (m *Model) closePalette() {
 	m.paletteScriptIdx = 0
 	m.paletteUseTA = false
 	m.paletteUseTags = false
+	m.paletteEditing = false
 	m.paletteTextarea = textarea.Model{}
 	m.overlay = OverlayNone
 	m.mode = ModeBrowse
@@ -47,16 +48,19 @@ func (m *Model) focusField(i int) tea.Cmd {
 	if i < 0 || i >= len(m.palette.fields) {
 		return nil
 	}
+	m.palette.focus = i
+	// In edit mode we actually hand focus to the field's input so
+	// keystrokes land there. In nav mode no input is focused —
+	// typing in nav mode is caught by the nav-mode key handler.
 	for j := range m.palette.fields {
-		if j == i {
+		if j == i && m.paletteEditing {
 			m.palette.fields[j].input.Focus()
 		} else {
 			m.palette.fields[j].input.Blur()
 		}
 	}
-	m.palette.focus = i
 	if m.paletteUseTags {
-		if i == m.palette.tagFieldIdx {
+		if i == m.palette.tagFieldIdx && m.paletteEditing {
 			m.paletteTags.Focus()
 		} else {
 			m.paletteTags.Blur()
@@ -124,48 +128,95 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return *m, nil
 	}
 
-	// Shared chrome.
-	switch msg.String() {
-	case "esc":
-		m.closePalette()
-		return *m, nil
-	case "ctrl+s":
+	// ctrl+s saves from either nav or edit mode.
+	if msg.String() == "ctrl+s" {
 		return m.submitPalette()
 	}
 
-	// Multi-line textarea palette (shell-init, notes).
+	// Multi-line textarea palette (shell-init). Textarea is always
+	// "editing" because enter inserts a newline — esc closes the
+	// palette directly.
 	if m.paletteUseTA {
+		if msg.String() == "esc" {
+			m.closePalette()
+			return *m, nil
+		}
 		var cmd tea.Cmd
 		m.paletteTextarea, cmd = m.paletteTextarea.Update(msg)
 		return *m, cmd
 	}
 
-	// Field grid palettes.
+	// Field grid palettes have two modes:
+	//   nav  — j/k/tab/shift+tab select a field; enter enters edit;
+	//          esc closes the palette; d/y actions still work for
+	//          confirm-style palettes (handled above).
+	//   edit — keystrokes go to the focused input/tagChips; enter
+	//          commits the field (back to nav); esc also commits
+	//          back to nav (not close).
 	if len(m.palette.fields) == 0 {
+		if msg.String() == "esc" {
+			m.closePalette()
+		}
 		return *m, nil
 	}
-	switch msg.String() {
-	case "tab":
-		return *m, m.nextField()
-	case "shift+tab":
-		return *m, m.prevField()
-	case "enter":
-		// Enter on the last field saves; otherwise advances.
-		if m.palette.focus == len(m.palette.fields)-1 {
-			return m.submitPalette()
-		}
-		return *m, m.nextField()
-	}
 
-	// Tag-chip editor owns its field when active.
-	if m.paletteUseTags && m.palette.focus == m.palette.tagFieldIdx {
-		cmd, _ := m.paletteTags.Update(msg)
+	if m.paletteEditing {
+		switch msg.String() {
+		case "esc", "enter":
+			m.exitEditMode()
+			return *m, nil
+		}
+		// Tag-chip editor owns its field when active.
+		if m.paletteUseTags && m.palette.focus == m.palette.tagFieldIdx {
+			cmd, _ := m.paletteTags.Update(msg)
+			return *m, cmd
+		}
+		var cmd tea.Cmd
+		m.palette.fields[m.palette.focus].input, cmd = m.palette.fields[m.palette.focus].input.Update(msg)
 		return *m, cmd
 	}
 
-	var cmd tea.Cmd
-	m.palette.fields[m.palette.focus].input, cmd = m.palette.fields[m.palette.focus].input.Update(msg)
-	return *m, cmd
+	// Nav mode.
+	switch msg.String() {
+	case "esc":
+		m.closePalette()
+		return *m, nil
+	case "j", "down", "tab":
+		return *m, m.nextField()
+	case "k", "up", "shift+tab":
+		return *m, m.prevField()
+	case "enter", "i":
+		return *m, m.enterEditMode()
+	case "g":
+		m.palette.focus = 0
+		return *m, m.focusField(0)
+	case "G":
+		return *m, m.focusField(len(m.palette.fields) - 1)
+	}
+	return *m, nil
+}
+
+// enterEditMode focuses the currently-selected field for text input.
+func (m *Model) enterEditMode() tea.Cmd {
+	m.paletteEditing = true
+	if m.paletteUseTags && m.palette.focus == m.palette.tagFieldIdx {
+		return m.paletteTags.Focus()
+	}
+	if m.palette.focus >= 0 && m.palette.focus < len(m.palette.fields) {
+		return m.palette.fields[m.palette.focus].input.Focus()
+	}
+	return nil
+}
+
+// exitEditMode blurs the active editor and returns to nav mode.
+func (m *Model) exitEditMode() {
+	m.paletteEditing = false
+	for i := range m.palette.fields {
+		m.palette.fields[i].input.Blur()
+	}
+	if m.paletteUseTags {
+		m.paletteTags.Blur()
+	}
 }
 
 // --- connection form ---
