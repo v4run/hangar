@@ -83,7 +83,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.setToast("disconnected", toastOK)
 		}
-		return m, tea.Batch(tea.EnableMouseCellMotion, m.clearToastCmd())
+		// tea.ClearScreen wipes anything ssh/db clients wrote to the
+		// normal screen before alt-screen was re-entered — otherwise
+		// the TUI can render one row down and scroll the header off.
+		return m, tea.Batch(tea.ClearScreen, tea.EnableMouseCellMotion, m.clearToastCmd())
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case tea.MouseMsg:
