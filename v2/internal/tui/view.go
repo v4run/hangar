@@ -956,7 +956,17 @@ func (m Model) renderPalette() string {
 			rows[i] = marker + lab + val
 		}
 		// clamp to palette height — show a window around focus.
-		maxRows := 12
+		// Fit as many rows as the modal body can show (overall modal
+		// height minus title + two blanks + hint = ~5 rows chrome).
+		// Fallback to 12 if the arithmetic produces something too
+		// small to be useful.
+		maxRows := m.modalHeight(18, 30) - 5
+		if maxRows < 6 {
+			maxRows = 6
+		}
+		if maxRows > len(m.palette.fields) {
+			maxRows = len(m.palette.fields)
+		}
 		start := 0
 		if focused >= maxRows {
 			start = focused - maxRows + 1
