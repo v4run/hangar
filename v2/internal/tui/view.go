@@ -162,46 +162,100 @@ func (m Model) renderRow(r row, selected bool, width int) string {
 		return marker + theme.Label.Render(chev+" "+r.group.Name)
 	}
 	indent := strings.Repeat("  ", minInt(r.depth, 4))
-	var icon, name string
+
 	switch r.kind {
 	case rowGroup:
+		chev := "▾"
 		if m.collapsed[r.group.ID] {
-			icon = "▸ "
-		} else {
-			icon = "▾ "
+			chev = "▸"
 		}
-		name = r.group.Name
+		name := r.group.Name
+		if r.depth > 4 {
+			// Deep rows render as a breadcrumb instead of indenting
+			// into oblivion.
+			path := config.GroupPath(m.cfg, r.group.ID)
+			segments := strings.Split(path, "/")
+			if len(segments) > 2 {
+				crumb := strings.Join(segments[:len(segments)-1], " › ")
+				name = theme.Dim.Render(crumb+" › ") + name
+			}
+		}
+		count := m.groupChildCount(r.group.ID)
+		tag := ""
+		if count > 0 {
+			tag = theme.Hint.Render(fmt.Sprintf("  (%d)", count))
+		}
+		// Groups: bold accent so they stand out as parents.
+		line := indent + theme.Cursor.Render(chev+" ") + theme.Title.Render(name) + tag
+		return clipLine(line, width, selected)
 	case rowConnection:
-		icon = "• "
-		name = r.conn.Name
+		// Connections: dim bullet + normal name, indented under
+		// their group.
+		head := theme.Hint.Render("• ")
+		body := theme.Normal.Render(r.conn.Name)
+		return clipLine(indent+head+body, width, selected)
 	case rowDatabase:
-		icon = "⬢ "
-		name = r.db.Name
+		// Databases: dim hex + engine badge next to the name so
+		// `pg` / `my` / `rd` / `sq` reads at a glance.
+		head := theme.Hint.Render("⬢ ")
+		badge := theme.AccentDim
+		_ = badge
+		eng := engineBadge(r.db.Engine)
+		body := theme.Normal.Render(r.db.Name) + " " + theme.Hint.Render(eng)
+		return clipLine(indent+head+body, width, selected)
 	}
-	// For deep rows, prepend a breadcrumb instead of ever-growing
-	// indent — keeps the sidebar readable past 4 levels.
-	if r.depth > 4 && r.kind == rowGroup {
-		path := config.GroupPath(m.cfg, r.group.ID)
-		segments := strings.Split(path, "/")
-		if len(segments) > 2 {
-			crumb := strings.Join(segments[:len(segments)-1], " › ")
-			name = theme.Dim.Render(crumb+" › ") + name
-		}
-	}
-	line := indent + icon + name
+	return ""
+}
+
+// clipLine applies the selected-row styling or truncates to width.
+func clipLine(line string, width int, selected bool) string {
 	if lipgloss.Width(line) > width {
 		line = truncate(line, width)
 	}
 	if selected {
 		return theme.Selected.Render(line)
 	}
-	switch r.kind {
-	case rowGroup:
-		return theme.Normal.Bold(true).Render(line)
-	case rowDatabase:
-		return theme.Normal.Render(line)
+	return line
+}
+
+// groupChildCount returns the total number of direct children
+// (sub-groups + connections + databases) under id. Rendered next to
+// the group name so the user sees scope at a glance.
+func (m Model) groupChildCount(id uuid.UUID) int {
+	n := 0
+	for i := range m.cfg.Groups {
+		if m.cfg.Groups[i].Parent == id {
+			n++
+		}
 	}
-	return theme.Normal.Render(line)
+	for i := range m.cfg.Connections {
+		if m.cfg.Connections[i].Group == id {
+			n++
+		}
+	}
+	for i := range m.cfg.Databases {
+		if m.cfg.Databases[i].Group == id {
+			n++
+		}
+	}
+	return n
+}
+
+func engineBadge(e string) string {
+	switch e {
+	case "postgres":
+		return "pg"
+	case "mysql":
+		return "my"
+	case "redis":
+		return "rd"
+	case "sqlite":
+		return "sq"
+	}
+	if len(e) >= 2 {
+		return e[:2]
+	}
+	return e
 }
 
 // --- detail pane ---
