@@ -629,8 +629,11 @@ func (m Model) renderPalette() string {
 	return paddedBox(b.String(), minInt(80, m.width-10))
 }
 
-func (m Model) renderHelp() string {
-	// Build the full body once, then window it based on helpOffset.
+// helpBodyLines returns the full help body as one line per entry.
+// Used by both renderHelp (to window it) and the key handler (to
+// clamp helpOffset so holding `j` past the end doesn't keep
+// bumping the stored offset).
+func (m Model) helpBodyLines() []string {
 	var body strings.Builder
 	body.WriteString(theme.Label.Render("Keybindings"))
 	body.WriteString("\n")
@@ -651,18 +654,37 @@ func (m Model) renderHelp() string {
 	for _, lb := range m.leaderBindings() {
 		fmt.Fprintf(&body, "  %-14s  %s\n", theme.Cursor.Render("space "+lb.Key), theme.Normal.Render(lb.Desc))
 	}
+	return strings.Split(strings.TrimRight(body.String(), "\n"), "\n")
+}
 
-	lines := strings.Split(strings.TrimRight(body.String(), "\n"), "\n")
-	// Reserve 4 rows: title, blank, blank, footer.
+// helpMaxBody is the height (in rows) the help body can occupy
+// inside the overlay. Matches what renderHelp uses so a key
+// handler can clamp against it.
+func (m Model) helpMaxBody() int {
+	// Reserve 4 rows: title, blank, blank, footer. Plus 2 for the
+	// paddedBox border.
 	maxBody := m.height - 8
 	if maxBody < 5 {
 		maxBody = 5
 	}
-	offset := m.helpOffset
-	maxOffset := len(lines) - maxBody
-	if maxOffset < 0 {
-		maxOffset = 0
+	return maxBody
+}
+
+// helpMaxOffset is the largest helpOffset at which new content is
+// still visible. Used by the key handler to stop `j` past the end.
+func (m Model) helpMaxOffset() int {
+	max := len(m.helpBodyLines()) - m.helpMaxBody()
+	if max < 0 {
+		return 0
 	}
+	return max
+}
+
+func (m Model) renderHelp() string {
+	lines := m.helpBodyLines()
+	maxBody := m.helpMaxBody()
+	offset := m.helpOffset
+	maxOffset := m.helpMaxOffset()
 	if offset > maxOffset {
 		offset = maxOffset
 	}
