@@ -929,7 +929,19 @@ func (m Model) renderPalette() string {
 			}
 			lab := theme.Label.Render(fmt.Sprintf("%-9s ", f.label))
 			var val string
-			if m.paletteUseTags && i == m.palette.tagFieldIdx {
+			switch {
+			case len(f.choices) > 0:
+				// Cycle field — render as `< value >` with chevrons
+				// that look like dropdown handles.
+				cur := f.input.Value()
+				chev := theme.Hint.Render("‹")
+				chevR := theme.Hint.Render("›")
+				if i == focused {
+					chev = theme.Cursor.Render("‹")
+					chevR = theme.Cursor.Render("›")
+				}
+				val = chev + " " + theme.Normal.Render(cur) + " " + chevR
+			case m.paletteUseTags && i == m.palette.tagFieldIdx:
 				switch {
 				case i == focused && m.paletteEditing:
 					val = m.paletteTags.View()
@@ -938,9 +950,9 @@ func (m Model) renderPalette() string {
 				default:
 					val = theme.Hint.Render("(no tags)")
 				}
-			} else if i == focused && m.paletteEditing {
+			case i == focused && m.paletteEditing:
 				val = f.input.View()
-			} else {
+			default:
 				v := f.input.Value()
 				if f.input.EchoMode == textinput.EchoPassword && v != "" {
 					v = strings.Repeat("•", len([]rune(v)))

@@ -30,6 +30,9 @@ type paletteField struct {
 	hint   string
 	input  textinput.Model
 	masked bool
+	// choices, when non-empty, turns the field into a cycle picker:
+	// typing is disabled, enter / l / →  cycles forward, h / ← back.
+	choices []string
 }
 
 func (m *Model) closePalette() {
@@ -186,6 +189,7 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Nav mode.
+	cur := &m.palette.fields[m.palette.focus]
 	switch msg.String() {
 	case "esc":
 		m.closePalette()
@@ -194,8 +198,27 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return *m, m.nextField()
 	case "k", "up", "shift+tab":
 		return *m, m.prevField()
-	case "enter", "i":
+	case "enter":
+		if len(cur.choices) > 0 {
+			cycleChoiceField(cur, +1)
+			return *m, nil
+		}
 		return *m, m.enterEditMode()
+	case "i":
+		if len(cur.choices) > 0 {
+			return *m, nil // typing disabled on choice fields
+		}
+		return *m, m.enterEditMode()
+	case "l", "right":
+		if len(cur.choices) > 0 {
+			cycleChoiceField(cur, +1)
+			return *m, nil
+		}
+	case "h", "left":
+		if len(cur.choices) > 0 {
+			cycleChoiceField(cur, -1)
+			return *m, nil
+		}
 	case "g":
 		m.palette.focus = 0
 		return *m, m.focusField(0)
@@ -203,6 +226,27 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return *m, m.focusField(len(m.palette.fields) - 1)
 	}
 	return *m, nil
+}
+
+// cycleChoiceField moves the field's current value to the next
+// (dir=+1) or previous (-1) option in choices. If the current
+// value isn't one of the choices, it lands on the first choice.
+func cycleChoiceField(f *paletteField, dir int) {
+	cur := f.input.Value()
+	idx := -1
+	for i, c := range f.choices {
+		if c == cur {
+			idx = i
+			break
+		}
+	}
+	n := len(f.choices)
+	if idx < 0 {
+		idx = 0
+		dir = 0 // just land on first
+	}
+	idx = (idx + dir + n) % n
+	f.input.SetValue(f.choices[idx])
 }
 
 // enterEditMode focuses the currently-selected field for text input.
@@ -1328,7 +1372,7 @@ const (
 
 var dbFieldLabels = []string{"Engine", "Name", "Host", "Port", "User", "DBName", "Group", "Pass"}
 var dbFieldHints = []string{
-	"postgres | mysql | redis | sqlite",
+	"engine (h/l to cycle)",
 	"required",
 	"host or /path/to/file for sqlite",
 	"",
@@ -1337,6 +1381,8 @@ var dbFieldHints = []string{
 	"group path, blank for ungrouped",
 	"stored in keychain; or $(cmd)",
 }
+
+var dbEngineChoices = []string{"postgres", "mysql", "redis", "sqlite"}
 
 func (m *Model) openAddDatabasePalette() tea.Cmd {
 	return m.openDatabasePalette(PaletteAddDatabase, "New Database", nil)
@@ -1353,7 +1399,14 @@ func (m *Model) openDatabasePalette(kind PaletteKind, title string, d *config.Da
 		if i == dbFieldPassword {
 			ti.EchoMode = textinput.EchoPassword
 		}
-		fields[i] = paletteField{label: dbFieldLabels[i], hint: dbFieldHints[i], input: ti}
+		if i == dbFieldEngine {
+			ti.SetValue(dbEngineChoices[0])
+		}
+		pf := paletteField{label: dbFieldLabels[i], hint: dbFieldHints[i], input: ti}
+		if i == dbFieldEngine {
+			pf.choices = dbEngineChoices
+		}
+		fields[i] = pf
 	}
 	if d != nil {
 		fields[dbFieldEngine].input.SetValue(d.Engine)
