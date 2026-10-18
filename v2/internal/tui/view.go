@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 
@@ -43,18 +44,18 @@ func (m Model) View() string {
 
 	base := lipgloss.JoinVertical(lipgloss.Left, header, body, status)
 
-	// Overlays paint on top.
+	// Overlays paint on top (with a dimmed backdrop).
 	switch m.overlay {
 	case OverlayCmdBar:
-		return overlayLine(base, " "+m.cmdInput.View(), m.width, m.height)
+		return overlayOn(base, m.renderCmdBar(), m.width, m.height)
 	case OverlayLeader:
-		return overlayCenter(base, m.renderLeader(), m.width, m.height)
+		return overlayOn(base, m.renderLeader(), m.width, m.height)
 	case OverlayPicker:
-		return overlayCenter(base, m.renderPicker(), m.width, m.height)
+		return overlayOn(base, m.renderPicker(), m.width, m.height)
 	case OverlayPalette:
-		return overlayCenter(base, m.renderPalette(), m.width, m.height)
+		return overlayOn(base, m.renderPalette(), m.width, m.height)
 	case OverlayHelp:
-		return overlayCenter(base, m.renderHelp(), m.width, m.height)
+		return overlayOn(base, m.renderHelp(), m.width, m.height)
 	}
 	return base
 }
@@ -141,7 +142,10 @@ func (m Model) renderSidebar(w, h int) string {
 }
 
 func (m Model) renderRow(r row, selected bool, width int) string {
-	indent := strings.Repeat("  ", r.depth)
+	if r.kind == rowSectionHeader {
+		return theme.Label.Render("── " + r.group.Name + " ─")
+	}
+	indent := strings.Repeat("  ", minInt(r.depth, 4))
 	var icon, name string
 	switch r.kind {
 	case rowGroup:
@@ -157,6 +161,16 @@ func (m Model) renderRow(r row, selected bool, width int) string {
 	case rowDatabase:
 		icon = "⬢ "
 		name = r.db.Name
+	}
+	// For deep rows, prepend a breadcrumb instead of ever-growing
+	// indent — keeps the sidebar readable past 4 levels.
+	if r.depth > 4 && r.kind == rowGroup {
+		path := config.GroupPath(m.cfg, r.group.ID)
+		segments := strings.Split(path, "/")
+		if len(segments) > 2 {
+			crumb := strings.Join(segments[:len(segments)-1], " › ")
+			name = theme.Dim.Render(crumb+" › ") + name
+		}
 	}
 	line := indent + icon + name
 	if lipgloss.Width(line) > width {
@@ -389,7 +403,6 @@ func (m Model) renderStatusBar() string {
 	default:
 		chip = theme.ChipBrowse.Render("BROWSE")
 	}
-	hints := m.help.View(m.keymap)
 	right := ""
 	if m.toast != "" {
 		switch m.toastKind {
@@ -401,11 +414,53 @@ func (m Model) renderStatusBar() string {
 			right = theme.Dim.Render(m.toast)
 		}
 	}
-	gap := strings.Repeat(" ", maxInt(1, m.width-lipgloss.Width(chip)-lipgloss.Width(hints)-lipgloss.Width(right)-2))
+	// Reserve `rightSlot` columns for the toast so hints never
+	// overlap it. If no toast is active that space is just empty.
+	chipW := lipgloss.Width(chip)
+	rightW := lipgloss.Width(right)
+	hintsBudget := m.width - chipW - rightW - 4
+	if hintsBudget < 10 {
+		hintsBudget = 10
+	}
+	m.help.Width = hintsBudget
+	hints := m.help.View(m.keymap)
+	hints = truncate(hints, hintsBudget)
+	gap := strings.Repeat(" ", maxInt(1, m.width-chipW-lipgloss.Width(hints)-rightW-2))
 	return " " + chip + " " + hints + gap + right + " "
 }
 
 // --- overlays ---
+
+func (m Model) renderCmdBar() string {
+	var b strings.Builder
+	b.WriteString(theme.Title.Render("Command"))
+	b.WriteString("\n")
+	b.WriteString(m.cmdInput.View())
+	q := strings.ToLower(strings.TrimSpace(m.cmdInput.Value()))
+	cmds := m.commands()
+	type match struct {
+		name, help string
+	}
+	var matches []match
+	for _, c := range cmds {
+		if q == "" || strings.Contains(c.Name, q) {
+			matches = append(matches, match{name: c.Name, help: c.Help})
+		}
+	}
+	b.WriteString("\n\n")
+	for _, mm := range matches {
+		fmt.Fprintf(&b, "  %s  %s\n",
+			theme.Cursor.Render(fmt.Sprintf("%-10s", ":"+mm.name)),
+			theme.Dim.Render(mm.help))
+	}
+	if len(matches) == 0 {
+		b.WriteString(theme.Dim.Render("  (no matching command)"))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(theme.Dim.Render("  tab: autocomplete   enter: run   esc: cancel"))
+	return paddedBox(b.String(), minInt(60, m.width-10))
+}
 
 func (m Model) renderLeader() string {
 	var b strings.Builder
@@ -481,7 +536,7 @@ func (m Model) renderPalette() string {
 	switch m.palette.kind {
 	case PaletteHostKey:
 		if len(m.pendingKeys) == 0 {
-			b.WriteString(theme.Dim.Render("  Fetching host key…"))
+			b.WriteString(theme.Dim.Render("  " + m.spinner.View() + " Fetching host key…"))
 			b.WriteString("\n\n")
 		} else {
 			b.WriteString(theme.Label.Render("  Fingerprints:"))
@@ -496,24 +551,65 @@ func (m Model) renderPalette() string {
 			b.WriteString("\n\n")
 			b.WriteString(theme.Dim.Render("  y: trust and connect   n: cancel"))
 		}
-	case PaletteDeleteConnection:
+	case PaletteDeleteConnection, PaletteDeleteDatabase, PaletteDeleteGroup:
 		b.WriteString(theme.Dim.Render("  y: delete   n/esc: cancel"))
+	case PaletteShellInit:
+		b.WriteString(m.paletteTextarea.View())
+		b.WriteString("\n\n")
+		b.WriteString(theme.Dim.Render("  ctrl+s: save   esc: cancel"))
 	default:
+		// Field-grid palette. We compute an inner viewport around the
+		// focused field so a very long form doesn't overflow the
+		// palette box on a short terminal.
+		focused := m.palette.focus
+		rows := make([]string, len(m.palette.fields))
 		for i, f := range m.palette.fields {
 			lab := theme.Label.Render(fmt.Sprintf("  %-9s ", f.label))
 			var val string
-			if i == m.palette.focus {
+			if m.paletteUseTags && i == m.palette.tagFieldIdx {
+				if i == focused {
+					val = m.paletteTags.View()
+				} else if len(m.paletteTags.chips) > 0 {
+					val = m.paletteTags.View()
+				} else {
+					val = theme.Hint.Render("(no tags)")
+				}
+			} else if i == focused {
 				val = f.input.View()
 			} else {
-				val = theme.Dim.Render(f.input.Value())
-				if f.input.Value() == "" {
+				v := f.input.Value()
+				if f.input.EchoMode == textinput.EchoPassword && v != "" {
+					v = strings.Repeat("•", len([]rune(v)))
+				}
+				val = theme.Dim.Render(v)
+				if v == "" {
 					val = theme.Hint.Render(f.hint)
 				}
 			}
-			b.WriteString(lab + val + "\n")
+			rows[i] = lab + val
+		}
+		// clamp to palette height — show a window around focus.
+		maxRows := 12
+		start := 0
+		if focused >= maxRows {
+			start = focused - maxRows + 1
+		}
+		end := start + maxRows
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if start > 0 {
+			b.WriteString(theme.Hint.Render(fmt.Sprintf("  ▲ %d more\n", start)))
+		}
+		for _, r := range rows[start:end] {
+			b.WriteString(r)
+			b.WriteString("\n")
+		}
+		if end < len(rows) {
+			b.WriteString(theme.Hint.Render(fmt.Sprintf("  ▼ %d more\n", len(rows)-end)))
 		}
 		b.WriteString("\n")
-		b.WriteString(theme.Dim.Render("  tab: next   shift+tab: prev   enter / ctrl+s: save   esc: cancel"))
+		b.WriteString(theme.Dim.Render("  tab: next   shift+tab: prev   enter: next / save   ctrl+s: save   esc: cancel"))
 	}
 	if m.palette.err != "" {
 		b.WriteString("\n\n")
@@ -526,12 +622,26 @@ func (m Model) renderHelp() string {
 	var b strings.Builder
 	b.WriteString(theme.Title.Render("Hangar v2 — help"))
 	b.WriteString("\n\n")
+	b.WriteString(theme.Label.Render("Keybindings"))
+	b.WriteString("\n")
 	for _, group := range m.keymap.FullHelp() {
 		for _, k := range group {
 			fmt.Fprintf(&b, "  %-14s  %s\n", theme.Cursor.Render(k.Help().Key), theme.Normal.Render(k.Help().Desc))
 		}
 		b.WriteString("\n")
 	}
+	b.WriteString(theme.Label.Render("Commands (`:`)"))
+	b.WriteString("\n")
+	for _, c := range m.commands() {
+		fmt.Fprintf(&b, "  %-14s  %s\n", theme.Cursor.Render(":"+c.Name), theme.Normal.Render(c.Help))
+	}
+	b.WriteString("\n")
+	b.WriteString(theme.Label.Render("Leader (space)"))
+	b.WriteString("\n")
+	for _, lb := range m.leaderBindings() {
+		fmt.Fprintf(&b, "  %-14s  %s\n", theme.Cursor.Render("space "+lb.Key), theme.Normal.Render(lb.Desc))
+	}
+	b.WriteString("\n")
 	b.WriteString(theme.Dim.Render("  esc / ? to close"))
 	return paddedBox(b.String(), minInt(72, m.width-10))
 }
@@ -571,20 +681,17 @@ func findConnByID(cfg *config.Config, id uuid.UUID) *config.Connection {
 	return nil
 }
 
-func paddedBox(s string, width int) string {
-	return theme.Pane.Width(width).Render(s)
+func findDBByID(cfg *config.Config, id uuid.UUID) *config.Database {
+	for i := range cfg.Databases {
+		if cfg.Databases[i].ID == id {
+			return &cfg.Databases[i]
+		}
+	}
+	return nil
 }
 
-func overlayCenter(base, overlay string, width, height int) string {
-	// Lipgloss doesn't have a native overlay; render the base and
-	// then draw the overlay centered by composing the full-screen
-	// output. Simplest: place overlay centered inside a canvas of
-	// base-dimensions, letting rows pass through where overlay is
-	// empty. We fake it by printing the overlay in a Place block
-	// and letting the terminal overwrite — v2 adds a proper
-	// overlay compositor in alpha.2.
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, overlay,
-		lipgloss.WithWhitespaceChars(" "))
+func paddedBox(s string, width int) string {
+	return theme.Pane.Width(width).Render(s)
 }
 
 func overlayLine(base, line string, width, height int) string {

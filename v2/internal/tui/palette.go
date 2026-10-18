@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/google/uuid"
 
@@ -14,13 +15,14 @@ import (
 )
 
 type paletteState struct {
-	kind    PaletteKind
-	title   string
-	message string
-	fields  []paletteField
-	focus   int
-	target  uuid.UUID // for edit/delete
-	err     string
+	kind        PaletteKind
+	title       string
+	message     string
+	fields      []paletteField
+	focus       int
+	target      uuid.UUID // for edit/delete
+	err         string
+	tagFieldIdx int // index of the paletteField that renders chip-tags, -1 if none
 }
 
 type paletteField struct {
@@ -34,6 +36,9 @@ func (m *Model) closePalette() {
 	m.palette = paletteState{}
 	m.paletteOpts = nil
 	m.paletteScriptIdx = 0
+	m.paletteUseTA = false
+	m.paletteUseTags = false
+	m.paletteTextarea = textarea.Model{}
 	m.overlay = OverlayNone
 	m.mode = ModeBrowse
 }
@@ -50,6 +55,13 @@ func (m *Model) focusField(i int) tea.Cmd {
 		}
 	}
 	m.palette.focus = i
+	if m.paletteUseTags {
+		if i == m.palette.tagFieldIdx {
+			m.paletteTags.Focus()
+		} else {
+			m.paletteTags.Blur()
+		}
+	}
 	return textinput.Blink
 }
 
@@ -64,44 +76,81 @@ func (m *Model) prevField() tea.Cmd {
 }
 
 func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Confirm-style palettes have no fields — handle them first.
+	switch m.palette.kind {
+	case PaletteDeleteConnection, PaletteDeleteDatabase, PaletteDeleteGroup:
+		switch msg.String() {
+		case "esc", "n", "N":
+			m.closePalette()
+			return m, nil
+		case "y", "Y", "ctrl+s":
+			return m.submitPalette()
+		}
+		return m, nil
+	case PaletteHostKey:
+		switch msg.String() {
+		case "esc", "n", "N":
+			m.closePalette()
+			m.pendingConn = nil
+			m.pendingKeys = nil
+			return m, nil
+		case "y", "Y", "enter":
+			if len(m.pendingKeys) == 0 {
+				return m, nil // still scanning
+			}
+			return m.confirmHostKey()
+		}
+		return m, nil
+	case PaletteConfirmConnect:
+		switch msg.String() {
+		case "esc", "n", "N":
+			m.closePalette()
+			return m, nil
+		case "y", "Y", "enter":
+			return m.confirmConnect()
+		}
+		return m, nil
+	}
+
+	// Shared chrome.
 	switch msg.String() {
 	case "esc":
 		m.closePalette()
 		return m, nil
+	case "ctrl+s":
+		return m.submitPalette()
+	}
+
+	// Multi-line textarea palette (shell-init, notes).
+	if m.paletteUseTA {
+		var cmd tea.Cmd
+		m.paletteTextarea, cmd = m.paletteTextarea.Update(msg)
+		return m, cmd
+	}
+
+	// Field grid palettes.
+	if len(m.palette.fields) == 0 {
+		return m, nil
+	}
+	switch msg.String() {
 	case "tab":
 		return m, m.nextField()
 	case "shift+tab":
 		return m, m.prevField()
-	case "ctrl+s", "enter":
-		if m.palette.kind == PaletteDeleteConnection {
-			// Enter alone shouldn't delete — require ctrl+s or y.
-			if msg.String() == "enter" {
-				m.closePalette()
-				return m, nil
-			}
-		}
-		return m.submitPalette()
-	case "y", "Y":
-		if m.palette.kind == PaletteDeleteConnection {
+	case "enter":
+		// Enter on the last field saves; otherwise advances.
+		if m.palette.focus == len(m.palette.fields)-1 {
 			return m.submitPalette()
 		}
-		if m.palette.kind == PaletteHostKey {
-			return m.confirmHostKey()
-		}
-		if m.palette.kind == PaletteConfirmConnect {
-			return m.confirmConnect()
-		}
-	case "n", "N":
-		if m.palette.kind == PaletteDeleteConnection ||
-			m.palette.kind == PaletteHostKey ||
-			m.palette.kind == PaletteConfirmConnect {
-			m.closePalette()
-			return m, nil
-		}
+		return m, m.nextField()
 	}
-	if len(m.palette.fields) == 0 {
-		return m, nil
+
+	// Tag-chip editor owns its field when active.
+	if m.paletteUseTags && m.palette.focus == m.palette.tagFieldIdx {
+		cmd, _ := m.paletteTags.Update(msg)
+		return m, cmd
 	}
+
 	var cmd tea.Cmd
 	m.palette.fields[m.palette.focus].input, cmd = m.palette.fields[m.palette.focus].input.Update(msg)
 	return m, cmd
@@ -156,6 +205,7 @@ func (m *Model) openConnectionPalette(kind PaletteKind, title string, c *config.
 		}
 		fields[i] = paletteField{label: connFieldLabels[i], hint: connFieldHints[i], input: ti}
 	}
+	var initialTags []string
 	if c != nil {
 		fields[connFieldName].input.SetValue(c.Name)
 		fields[connFieldHost].input.SetValue(c.Host)
@@ -165,7 +215,7 @@ func (m *Model) openConnectionPalette(kind PaletteKind, title string, c *config.
 		fields[connFieldUser].input.SetValue(c.User)
 		fields[connFieldKey].input.SetValue(c.IdentityFile)
 		fields[connFieldGroup].input.SetValue(config.GroupPath(m.cfg, c.Group))
-		fields[connFieldTags].input.SetValue(strings.Join(c.Tags, ", "))
+		initialTags = append([]string(nil), c.Tags...)
 		if c.Password != "" {
 			fields[connFieldPassword].input.SetValue(c.Password)
 		} else if pw, _ := sshauth.GetPassword(c.ID.String()); pw != "" {
@@ -176,7 +226,9 @@ func (m *Model) openConnectionPalette(kind PaletteKind, title string, c *config.
 	for i := range fields {
 		fields[i].input.CursorEnd()
 	}
-	m.palette = paletteState{kind: kind, title: title, fields: fields}
+	m.palette = paletteState{kind: kind, title: title, fields: fields, tagFieldIdx: connFieldTags}
+	m.paletteTags = newTagChips(initialTags)
+	m.paletteUseTags = true
 	if c != nil {
 		m.palette.target = c.ID
 	}
@@ -197,36 +249,105 @@ func (m *Model) openDeleteConnectionPalette(c *config.Connection) tea.Cmd {
 	return nil
 }
 
-// --- group form (minimal — just a name for now) ---
+// --- group form ---
+
+const (
+	groupFieldPath = iota
+	groupFieldUser
+	groupFieldKey
+	groupFieldJump
+	groupFieldFwdAgent
+	groupFieldCompression
+	groupFieldLocalFwd
+	groupFieldRemoteFwd
+	groupFieldTags
+	groupFieldCount
+)
+
+var groupFieldLabels = []string{
+	"Path", "User", "Key", "Jump", "FwdAgent", "Compress", "LocalFwd", "RemoteFwd", "Tags",
+}
+var groupFieldHints = []string{
+	"slash-separated for nesting (prod/us-east)",
+	"default user (inherited by children + connections)",
+	"default identity file",
+	"name of a connection to use as jump host",
+	"yes / no / blank",
+	"yes / no / blank",
+	"8080:localhost:80, 9090:localhost:90",
+	"3000:localhost:3000",
+	"",
+}
 
 func (m *Model) openAddGroupPalette() tea.Cmd {
-	ti := textinput.New()
-	ti.Prompt = ""
-	ti.Placeholder = "group name (slash for nesting: prod/us-east)"
-	m.palette = paletteState{
-		kind:   PaletteAddGroup,
-		title:  "New Group",
-		fields: []paletteField{{label: "Name", input: ti}},
+	return m.openGroupPalette(PaletteAddGroup, "New Group", nil)
+}
+
+func (m *Model) openEditGroupPalette(g *config.Group) tea.Cmd {
+	return m.openGroupPalette(PaletteEditGroup, "Edit "+g.Name, g)
+}
+
+func (m *Model) openGroupPalette(kind PaletteKind, title string, g *config.Group) tea.Cmd {
+	fields := make([]paletteField, groupFieldCount)
+	for i := range fields {
+		ti := textinput.New()
+		ti.Prompt = ""
+		ti.Placeholder = groupFieldHints[i]
+		fields[i] = paletteField{label: groupFieldLabels[i], hint: groupFieldHints[i], input: ti}
+	}
+	var initialTags []string
+	if g != nil {
+		fields[groupFieldPath].input.SetValue(config.GroupPath(m.cfg, g.ID))
+		fields[groupFieldUser].input.SetValue(g.User)
+		fields[groupFieldKey].input.SetValue(g.IdentityFile)
+		if g.JumpHost != uuid.Nil {
+			if j := findConnByID(m.cfg, g.JumpHost); j != nil {
+				fields[groupFieldJump].input.SetValue(j.Name)
+			}
+		}
+		if g.SSHOptions != nil {
+			if g.SSHOptions.ForwardAgent != nil {
+				fields[groupFieldFwdAgent].input.SetValue(boolToYesNo(*g.SSHOptions.ForwardAgent))
+			}
+			if g.SSHOptions.Compression != nil {
+				fields[groupFieldCompression].input.SetValue(boolToYesNo(*g.SSHOptions.Compression))
+			}
+			fields[groupFieldLocalFwd].input.SetValue(strings.Join(g.SSHOptions.LocalForward, ", "))
+			fields[groupFieldRemoteFwd].input.SetValue(strings.Join(g.SSHOptions.RemoteForward, ", "))
+		}
+		initialTags = append([]string(nil), g.Tags...)
+	}
+	for i := range fields {
+		fields[i].input.CursorEnd()
+	}
+	m.palette = paletteState{kind: kind, title: title, fields: fields, tagFieldIdx: groupFieldTags}
+	m.paletteTags = newTagChips(initialTags)
+	m.paletteUseTags = true
+	if g != nil {
+		m.palette.target = g.ID
 	}
 	m.overlay = OverlayPalette
 	m.mode = ModeEdit
 	return m.focusField(0)
 }
 
-func (m *Model) openEditGroupPalette(g *config.Group) tea.Cmd {
-	ti := textinput.New()
-	ti.Prompt = ""
-	ti.SetValue(g.Name)
-	ti.CursorEnd()
-	m.palette = paletteState{
-		kind:   PaletteEditGroup,
-		title:  "Edit group",
-		fields: []paletteField{{label: "Name", input: ti}},
-		target: g.ID,
+func boolToYesNo(b bool) string {
+	if b {
+		return "yes"
 	}
-	m.overlay = OverlayPalette
-	m.mode = ModeEdit
-	return m.focusField(0)
+	return "no"
+}
+
+func parseYesNo(s string) *bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "yes", "y", "true", "1":
+		b := true
+		return &b
+	case "no", "n", "false", "0":
+		b := false
+		return &b
+	}
+	return nil
 }
 
 // --- submit ---
@@ -263,7 +384,67 @@ func (m *Model) submitPalette() (tea.Model, tea.Cmd) {
 		return m.deleteGroup(m.palette.target)
 	case PaletteShellInit:
 		return m.saveShellInit()
+	case PaletteAddForward:
+		return m.saveForward()
 	}
+	return m, nil
+}
+
+// --- port forward add ---
+
+func (m *Model) openAddForwardPalette(c *config.Connection) tea.Cmd {
+	dir := textinput.New()
+	dir.Prompt = ""
+	dir.Placeholder = "L or R (local or remote)"
+	spec := textinput.New()
+	spec.Prompt = ""
+	spec.Placeholder = "8080:localhost:80"
+	m.palette = paletteState{
+		kind:  PaletteAddForward,
+		title: "Add port forward — " + c.Name,
+		fields: []paletteField{
+			{label: "Direction", input: dir},
+			{label: "Spec", input: spec},
+		},
+		target: c.ID,
+	}
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return m.focusField(0)
+}
+
+func (m *Model) saveForward() (tea.Model, tea.Cmd) {
+	dir := strings.ToUpper(strings.TrimSpace(m.palette.fields[0].input.Value()))
+	spec := strings.TrimSpace(m.palette.fields[1].input.Value())
+	if dir != "L" && dir != "R" {
+		m.palette.err = "direction must be L or R"
+		return m, nil
+	}
+	if spec == "" {
+		m.palette.err = "spec is required"
+		return m, nil
+	}
+	for i := range m.cfg.Connections {
+		if m.cfg.Connections[i].ID != m.palette.target {
+			continue
+		}
+		c := &m.cfg.Connections[i]
+		if c.SSHOptions == nil {
+			c.SSHOptions = &config.SSHOptions{}
+		}
+		if dir == "L" {
+			c.SSHOptions.LocalForward = append(c.SSHOptions.LocalForward, spec)
+		} else {
+			c.SSHOptions.RemoteForward = append(c.SSHOptions.RemoteForward, spec)
+		}
+		break
+	}
+	if err := config.Save(m.cfgDir, m.cfg); err != nil {
+		m.palette.err = err.Error()
+		return m, nil
+	}
+	m.closePalette()
+	m.setToast("forward added", toastOK)
 	return m, nil
 }
 
@@ -340,23 +521,23 @@ func (m *Model) deleteGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 // --- shell init multi-line editor ---
 
 func (m *Model) openShellInitPalette(scope shellInitScope, target uuid.UUID, initial string) tea.Cmd {
-	ta := textinput.New() // bubbles/textinput handles single-line only; we fake multi-line by writing \n through a wider input.
-	ta.Prompt = ""
-	ta.Placeholder = "shell init (bash lines; use ⌥⏎ or paste for newlines)"
+	ta := textarea.New()
+	ta.Placeholder = "bash lines — enter adds a newline, ctrl+s saves, esc cancels"
 	ta.CharLimit = 0
-	ta.Width = 80
+	ta.SetWidth(70)
+	ta.SetHeight(10)
 	ta.SetValue(initial)
-	ta.CursorEnd()
 	m.palette = paletteState{
 		kind:   PaletteShellInit,
 		title:  shellInitTitle(scope),
-		fields: []paletteField{{label: "ShellInit", input: ta}},
 		target: target,
 	}
+	m.paletteTextarea = ta
+	m.paletteUseTA = true
 	m.shellInitScopeSel = scope
 	m.overlay = OverlayPalette
 	m.mode = ModeEdit
-	return m.focusField(0)
+	return m.paletteTextarea.Focus()
 }
 
 type shellInitScope int
@@ -378,7 +559,7 @@ func shellInitTitle(s shellInitScope) string {
 }
 
 func (m *Model) saveShellInit() (tea.Model, tea.Cmd) {
-	val := m.palette.fields[0].input.Value()
+	val := m.paletteTextarea.Value()
 	switch m.shellInitScopeSel {
 	case shellInitScopeGlobal:
 		m.cfg.ShellInit = val
@@ -757,7 +938,7 @@ func (m *Model) saveConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	tags := splitAndTrim(m.palette.fields[connFieldTags].input.Value(), ",")
+	tags := m.paletteTags.Values()
 	password := strings.TrimSpace(m.palette.fields[connFieldPassword].input.Value())
 	rc := strings.TrimSpace(m.palette.fields[connFieldRemoteCmd].input.Value())
 
@@ -831,31 +1012,85 @@ func (m *Model) deleteConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
-	name := strings.TrimSpace(m.palette.fields[0].input.Value())
-	if name == "" {
-		m.palette.err = "name is required"
+	path := strings.TrimSpace(m.palette.fields[groupFieldPath].input.Value())
+	if path == "" {
+		m.palette.err = "path is required"
 		return m, nil
 	}
-	gID, err := m.resolveOrCreateGroupPath(name)
+	gID, err := m.resolveOrCreateGroupPath(path)
 	if err != nil {
 		m.palette.err = err.Error()
 		return m, nil
 	}
-	// Rename an existing group when editing.
+	// If editing an existing group whose path has moved, transfer its
+	// contents (child groups, connections, databases) to the new UUID
+	// and drop the original row.
 	if id != uuid.Nil && id != gID {
 		for i := range m.cfg.Groups {
+			if m.cfg.Groups[i].Parent == id {
+				m.cfg.Groups[i].Parent = gID
+			}
+		}
+		for ci := range m.cfg.Connections {
+			if m.cfg.Connections[ci].Group == id {
+				m.cfg.Connections[ci].Group = gID
+			}
+		}
+		for di := range m.cfg.Databases {
+			if m.cfg.Databases[di].Group == id {
+				m.cfg.Databases[di].Group = gID
+			}
+		}
+		for i := range m.cfg.Groups {
 			if m.cfg.Groups[i].ID == id {
-				// Transfer connections to the new group; drop the old
-				// one.
-				for ci := range m.cfg.Connections {
-					if m.cfg.Connections[ci].Group == id {
-						m.cfg.Connections[ci].Group = gID
-					}
-				}
 				m.cfg.Groups = append(m.cfg.Groups[:i], m.cfg.Groups[i+1:]...)
 				break
 			}
 		}
+	}
+	// Fill in the inheritable fields on the (possibly new) group.
+	for i := range m.cfg.Groups {
+		if m.cfg.Groups[i].ID != gID {
+			continue
+		}
+		g := &m.cfg.Groups[i]
+		g.User = strings.TrimSpace(m.palette.fields[groupFieldUser].input.Value())
+		g.IdentityFile = strings.TrimSpace(m.palette.fields[groupFieldKey].input.Value())
+		// JumpHost: resolve the typed connection name to a UUID.
+		jumpName := strings.TrimSpace(m.palette.fields[groupFieldJump].input.Value())
+		if jumpName == "" {
+			g.JumpHost = uuid.Nil
+		} else if j := m.connectionByName(jumpName); j != nil {
+			g.JumpHost = j.ID
+		} else {
+			m.palette.err = "unknown jump-host connection: " + jumpName
+			return m, nil
+		}
+		opts := &config.SSHOptions{}
+		touched := false
+		if fa := parseYesNo(m.palette.fields[groupFieldFwdAgent].input.Value()); fa != nil {
+			opts.ForwardAgent = fa
+			touched = true
+		}
+		if cmp := parseYesNo(m.palette.fields[groupFieldCompression].input.Value()); cmp != nil {
+			opts.Compression = cmp
+			touched = true
+		}
+		if lf := splitAndTrim(m.palette.fields[groupFieldLocalFwd].input.Value(), ","); len(lf) > 0 {
+			opts.LocalForward = lf
+			touched = true
+		}
+		if rf := splitAndTrim(m.palette.fields[groupFieldRemoteFwd].input.Value(), ","); len(rf) > 0 {
+			opts.RemoteForward = rf
+			touched = true
+		}
+		if touched {
+			g.SSHOptions = opts
+		} else {
+			g.SSHOptions = nil
+		}
+		g.Tags = m.paletteTags.Values()
+		break
 	}
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
 		m.palette.err = err.Error()
@@ -864,8 +1099,18 @@ func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 	m.rebuildRows()
 	m.cursorToGroup(gID)
 	m.closePalette()
-	m.setToast("saved group "+name, toastOK)
+	m.setToast("saved group "+path, toastOK)
 	return m, nil
+}
+
+// connectionByName looks up a connection by its display name.
+func (m *Model) connectionByName(name string) *config.Connection {
+	for i := range m.cfg.Connections {
+		if m.cfg.Connections[i].Name == name {
+			return &m.cfg.Connections[i]
+		}
+	}
+	return nil
 }
 
 // resolveOrCreateGroupPath returns the UUID of the group at the given

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
@@ -63,6 +64,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case hostKeyScannedMsg:
+		m.spinning = false
 		if msg.err != nil {
 			m.setToast("key scan: "+msg.err.Error(), toastErr)
 			m.closePalette()
@@ -84,14 +86,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
+	case spinner.TickMsg:
+		if m.spinning {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	}
 	return m, nil
 }
 
-// handleMouse supports click-to-select in the sidebar and wheel
+// handleMouse supports click-to-select in the sidebar, click-on-tab
+// in the detail header, click-on-row in the fuzzy picker, and wheel
 // scrolling (sidebar if the pointer is over it, otherwise the detail
-// pane).
+// pane or the picker when it's active).
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Picker overlay — click a visible match to select, wheel scrolls.
+	if m.overlay == OverlayPicker {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if m.picker.cursor > 0 {
+				m.picker.cursor--
+			}
+		case tea.MouseButtonWheelDown:
+			if m.picker.cursor < len(m.picker.matches)-1 {
+				m.picker.cursor++
+			}
+		}
+		return m, nil
+	}
 	if m.overlay != OverlayNone {
 		return m, nil
 	}
@@ -117,18 +141,39 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.MouseButtonLeft:
-		if msg.Action != tea.MouseActionPress || !inSidebar {
+		if msg.Action != tea.MouseActionPress {
 			return m, nil
 		}
-		// Sidebar rows render under: header(1) + pane top border(1) +
-		// filter row(1) + blank(1) = y>=4. Rows then flow with the
-		// offset from render.
-		row := msg.Y - 4 + m.offset
-		if row < 0 || row >= len(m.rows) {
+		if inSidebar {
+			// Sidebar rows render under: header(1) + pane top border(1) +
+			// filter row(1) + blank(1) = y>=4. Rows then flow with the
+			// offset from render.
+			row := msg.Y - 4 + m.offset
+			if row < 0 || row >= len(m.rows) {
+				return m, nil
+			}
+			m.cursor = row
 			return m, nil
 		}
-		m.cursor = row
-		return m, nil
+		// Detail-pane tab bar: y == 2 (header + pane top border).
+		// Each tab is " Tab " padded; approximate hit zones using the
+		// tabCount.
+		if msg.Y == 2 {
+			// Rough: distribute tabs evenly inside the right pane.
+			rightX := msg.X - sidebarW
+			per := (m.width - sidebarW) / int(tabCount)
+			if per < 1 {
+				per = 1
+			}
+			idx := rightX / per
+			if idx < 0 {
+				idx = 0
+			}
+			if idx >= int(tabCount) {
+				idx = int(tabCount) - 1
+			}
+			m.tab = Tab(idx)
+		}
 	}
 	return m, nil
 }
@@ -249,6 +294,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if c := m.selectedConnection(); c != nil {
 			return m, m.openDeleteConnectionPalette(c)
 		}
+	case key.Matches(msg, m.keymap.MoveUp):
+		m.moveSelectedBy(-1)
+		return m, nil
+	case key.Matches(msg, m.keymap.MoveDown):
+		m.moveSelectedBy(+1)
+		return m, nil
 	case key.Matches(msg, m.keymap.PageUp):
 		if m.detailOffset > 0 {
 			m.detailOffset -= 5

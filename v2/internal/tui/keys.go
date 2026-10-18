@@ -38,6 +38,10 @@ type KeyMap struct {
 	ImportSSH   key.Binding
 	ToggleExpand key.Binding // h / l / space on a group row
 
+	// Reordering
+	MoveUp   key.Binding
+	MoveDown key.Binding
+
 	// Global
 	Quit key.Binding
 	Esc  key.Binding
@@ -53,7 +57,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right, k.Top, k.Bottom, k.PageUp, k.PageDn},
 		{k.Enter, k.Tab, k.ShiftTab, k.ToggleExpand},
-		{k.Connect, k.Edit, k.Add, k.NewGroup, k.Duplicate, k.Delete, k.ImportSSH},
+		{k.Connect, k.Edit, k.Add, k.NewGroup, k.Duplicate, k.Delete, k.ImportSSH, k.MoveUp, k.MoveDown},
 		{k.Filter, k.Cmd, k.Leader, k.Help, k.Quit},
 	}
 }
@@ -87,7 +91,9 @@ func DefaultKeymap() KeyMap {
 		NewGroup:  b([]string{"g"}, "g", "new group"),
 		ImportSSH: b([]string{"i"}, "i", "import ssh cmd"),
 		ToggleExpand: b([]string{" "}, "space", "toggle expand"),
-		Quit:      b([]string{"q", "ctrl+c"}, "q", "quit"),
-		Esc:       b([]string{"esc"}, "esc", "cancel"),
+		MoveUp:   b([]string{"K"}, "K", "move up"),
+		MoveDown: b([]string{"J"}, "J", "move down"),
+		Quit:     b([]string{"q", "ctrl+c"}, "q", "quit"),
+		Esc:      b([]string{"esc"}, "esc", "cancel"),
 	}
 }

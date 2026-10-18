@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
@@ -69,6 +71,7 @@ const (
 	PaletteDeleteDatabase
 	PaletteDeleteGroup
 	PaletteShellInit
+	PaletteAddForward
 )
 
 // Tab names a detail-pane tab.
@@ -134,6 +137,15 @@ type Model struct {
 	paletteOpts       *config.SSHOptions // SSHOptions carried into add-conn from ssh-import
 	paletteScriptIdx  int                // -1 = new script, else index into Scripts
 	shellInitScopeSel shellInitScope     // which scope the current ShellInit palette targets
+	paletteTextarea   textarea.Model     // multi-line editor used by shell-init / notes palettes
+	paletteTags       tagChips           // tag-chip editor for connection + group palettes
+	paletteUseTA      bool               // true when the active palette owns the textarea
+	paletteUseTags    bool               // true when the active palette owns tagChips
+	spinner           spinner.Model      // tick-driven busy indicator for host-key scans etc.
+	spinning          bool
+
+	// Per-user mutable state (frecency); persists in state.json.
+	state *config.State
 
 	// Connection target of the current connect intent (host-key
 	// confirm path).
@@ -187,6 +199,9 @@ func New(cfg *config.Config, cfgDir string) Model {
 	fi.Prompt = "/ "
 	fi.Placeholder = "filter"
 
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+
 	m := Model{
 		cfg:       cfg,
 		cfgDir:    cfgDir,
@@ -195,6 +210,8 @@ func New(cfg *config.Config, cfgDir string) Model {
 		help:      help.New(),
 		cmdInput:  ti,
 		filter:    fi,
+		spinner:   sp,
+		state:     config.LoadState(cfgDir),
 	}
 	m.rebuildRows()
 	return m

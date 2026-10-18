@@ -51,6 +51,8 @@ func (p dbPickable) Keywords() []string {
 // local launches are supported in alpha.1 (no SSH tunnel) — the
 // tunnel path lands in alpha.2.
 func (m *Model) launchDatabase(d *config.Database) tea.Cmd {
+	m.state.Touch(d.ID)
+	_ = config.SaveState(m.cfgDir, m.state)
 	password := resolveDBPassword(d)
 	cmd, err := buildDBClient(d, d.Host, d.Port, password)
 	if err != nil {

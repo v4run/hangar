@@ -22,6 +22,10 @@ type sshExitMsg struct{ err error }
 // opens the host-key palette and triggers a background scan.
 // Otherwise launches ssh immediately.
 func (m *Model) beginConnect(c *config.Connection) tea.Cmd {
+	// Bump frecency state. Fire-and-forget save.
+	m.state.Touch(c.ID)
+	_ = config.SaveState(m.cfgDir, m.state)
+
 	resolved := config.Resolve(m.cfg, c)
 	if !sshauth.IsKnownHost(resolved.Host, portOr22(resolved.Port)) {
 		m.pendingConn = c
@@ -35,10 +39,14 @@ func (m *Model) beginConnect(c *config.Connection) tea.Cmd {
 		m.overlay = OverlayPalette
 		m.mode = ModeConnect
 		host, port := resolved.Host, portOr22(resolved.Port)
-		return func() tea.Msg {
-			keys, err := sshauth.ScanHost(host, port)
-			return hostKeyScannedMsg{keys: keys, err: err}
-		}
+		m.spinning = true
+		return tea.Batch(
+			m.spinner.Tick,
+			func() tea.Msg {
+				keys, err := sshauth.ScanHost(host, port)
+				return hostKeyScannedMsg{keys: keys, err: err}
+			},
+		)
 	}
 	return m.launchSSH(resolved)
 }

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -74,41 +73,41 @@ func (m *Model) rebuildRows() {
 		return strings.Contains(strings.ToLower(d.Name+" "+d.Host+" "+d.Engine), q)
 	}
 
-	// Index groups by parent (slice of indices into cfg.Groups).
+	// Index groups / connections / databases by parent group, in the
+	// order they appear in the config slice (so J/K reorder is
+	// observable).
 	childrenOf := map[uuid.UUID][]int{}
 	for i := range cfg.Groups {
 		p := cfg.Groups[i].Parent
 		childrenOf[p] = append(childrenOf[p], i)
 	}
-	for _, idxs := range childrenOf {
-		sort.SliceStable(idxs, func(a, b int) bool {
-			return cfg.Groups[idxs[a]].Name < cfg.Groups[idxs[b]].Name
-		})
-	}
-
-	// Connections by group.
 	connsByGroup := map[uuid.UUID][]int{}
 	for i := range cfg.Connections {
 		g := cfg.Connections[i].Group
 		connsByGroup[g] = append(connsByGroup[g], i)
 	}
-	for _, idxs := range connsByGroup {
-		sort.SliceStable(idxs, func(a, b int) bool {
-			return cfg.Connections[idxs[a]].Name < cfg.Connections[idxs[b]].Name
-		})
-	}
-
-	// Databases by group (deferred display: show them under a group's
-	// connections for now).
 	dbsByGroup := map[uuid.UUID][]int{}
 	for i := range cfg.Databases {
 		g := cfg.Databases[i].Group
 		dbsByGroup[g] = append(dbsByGroup[g], i)
 	}
-	for _, idxs := range dbsByGroup {
-		sort.SliceStable(idxs, func(a, b int) bool {
-			return cfg.Databases[idxs[a]].Name < cfg.Databases[idxs[b]].Name
-		})
+
+	// Recent section at the very top (frecency, up to 5). Hidden when
+	// a filter is active.
+	if q == "" && m.state != nil {
+		top := m.state.TopRecent(5)
+		if len(top) > 0 {
+			m.rows = append(m.rows, row{kind: rowSectionHeader, group: &config.Group{Name: "Recent"}})
+			for _, id := range top {
+				if c := findConnByID(cfg, id); c != nil {
+					m.rows = append(m.rows, row{kind: rowConnection, depth: 1, conn: c})
+					continue
+				}
+				if d := findDBByID(cfg, id); d != nil {
+					m.rows = append(m.rows, row{kind: rowDatabase, depth: 1, db: d})
+				}
+			}
+		}
 	}
 
 	// Ungrouped items first (no header if none exist).
