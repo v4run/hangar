@@ -49,7 +49,7 @@ type KeyMap struct {
 
 // ShortHelp returns footer-strip bindings (context-insensitive subset).
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Enter, k.Edit, k.Add, k.Delete, k.Filter, k.Cmd, k.Leader, k.Help, k.Quit}
+	return []key.Binding{k.Enter, k.Edit, k.Add, k.Delete, k.Tab, k.Filter, k.Cmd, k.Leader, k.Help, k.Quit}
 }
 
 // FullHelp returns the `?` grid, grouped.
@@ -77,8 +77,8 @@ func DefaultKeymap() KeyMap {
 		PageUp:    b([]string{"pgup"}, "pgup", "scroll detail up"),
 		PageDn:    b([]string{"pgdown"}, "pgdn", "scroll detail down"),
 		Enter:     b([]string{"enter"}, "enter", "connect / confirm"),
-		Tab:       b([]string{"tab"}, "tab", "next tab / field"),
-		ShiftTab:  b([]string{"shift+tab"}, "⇧tab", "prev tab / field"),
+		Tab:       b([]string{"tab"}, "tab", "detail tab →"),
+		ShiftTab:  b([]string{"shift+tab"}, "⇧tab", "detail tab ←"),
 		Filter:    b([]string{"/"}, "/", "filter"),
 		Cmd:       b([]string{":"}, ":", "command"),
 		Leader:    b([]string{" "}, "space", "leader"),

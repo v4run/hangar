@@ -235,14 +235,17 @@ func (m Model) renderDetail(w, h int) string {
 func (m Model) renderTabs(w int) string {
 	var parts []string
 	for t := Tab(0); t < Tab(tabCount); t++ {
-		label := " " + t.String() + " "
+		label := t.String()
 		if t == m.tab {
-			parts = append(parts, theme.Selected.Underline(true).Render(label))
+			// Pop the current tab with a leading dot + bold accent.
+			parts = append(parts, theme.Selected.Render("● "+label))
 		} else {
-			parts = append(parts, theme.Dim.Render(label))
+			parts = append(parts, theme.Dim.Render("  "+label))
 		}
 	}
-	return strings.Join(parts, theme.Dim.Render("│"))
+	bar := strings.Join(parts, theme.Hint.Render("   "))
+	hint := theme.Hint.Render("  (tab / shift+tab)")
+	return bar + hint
 }
 
 func (m Model) renderDetailsTab(w int) string {
