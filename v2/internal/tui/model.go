@@ -61,6 +61,12 @@ const (
 	PaletteEditGroup
 	PaletteHostKey
 	PaletteConfirmConnect
+	PaletteImportSSH
+	PaletteNotes
+	PaletteScript
+	PaletteAddDatabase
+	PaletteEditDatabase
+	PaletteDeleteDatabase
 )
 
 // Tab names a detail-pane tab.
@@ -122,7 +128,9 @@ type Model struct {
 	picker pickerState
 
 	// Palette state.
-	palette paletteState
+	palette          paletteState
+	paletteOpts      *config.SSHOptions // SSHOptions carried into add-conn from ssh-import
+	paletteScriptIdx int                // -1 = new script, else index into Scripts
 
 	// Connection target of the current connect intent (host-key
 	// confirm path).
@@ -131,6 +139,12 @@ type Model struct {
 
 	// Right-pane vertical scroll offset for the detail content.
 	detailOffset int
+
+	// Sidebar filter. filter is the raw query; filtering == true means
+	// the input is capturing keys. The rebuildRows call reads filter
+	// each pass and hides non-matching rows.
+	filtering bool
+	filter    textinput.Model
 }
 
 // row is one sidebar line.
@@ -166,6 +180,10 @@ func New(cfg *config.Config, cfgDir string) Model {
 	ti.Placeholder = "command"
 	ti.CharLimit = 0
 
+	fi := textinput.New()
+	fi.Prompt = "/ "
+	fi.Placeholder = "filter"
+
 	m := Model{
 		cfg:       cfg,
 		cfgDir:    cfgDir,
@@ -173,6 +191,7 @@ func New(cfg *config.Config, cfgDir string) Model {
 		keymap:    DefaultKeymap(),
 		help:      help.New(),
 		cmdInput:  ti,
+		filter:    fi,
 	}
 	m.rebuildRows()
 	return m

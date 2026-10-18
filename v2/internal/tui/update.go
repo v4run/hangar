@@ -4,9 +4,33 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 )
+
+var textinputBlink = textinput.Blink
+
+func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.filtering = false
+		m.filter.Blur()
+		m.filter.SetValue("")
+		m.rebuildRows()
+		m.cursor = 0
+		return m, nil
+	case "enter":
+		m.filtering = false
+		m.filter.Blur()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.filter, cmd = m.filter.Update(msg)
+	m.rebuildRows()
+	m.cursor = 0
+	return m, cmd
+}
 
 type toastClearMsg struct{ at time.Time }
 
@@ -58,6 +82,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(tea.EnableMouseCellMotion, m.clearToastCmd())
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
+	}
+	return m, nil
+}
+
+// handleMouse supports click-to-select in the sidebar and wheel
+// scrolling (sidebar if the pointer is over it, otherwise the detail
+// pane).
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.overlay != OverlayNone {
+		return m, nil
+	}
+	sidebarW := m.sidebarWidth()
+	inSidebar := msg.X < sidebarW
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if inSidebar {
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		} else if m.detailOffset > 0 {
+			m.detailOffset--
+		}
+		return m, nil
+	case tea.MouseButtonWheelDown:
+		if inSidebar {
+			if m.cursor < len(m.rows)-1 {
+				m.cursor++
+			}
+		} else {
+			m.detailOffset++
+		}
+		return m, nil
+	case tea.MouseButtonLeft:
+		if msg.Action != tea.MouseActionPress || !inSidebar {
+			return m, nil
+		}
+		// Sidebar rows render under: header(1) + pane top border(1) +
+		// filter row(1) + blank(1) = y>=4. Rows then flow with the
+		// offset from render.
+		row := msg.Y - 4 + m.offset
+		if row < 0 || row >= len(m.rows) {
+			return m, nil
+		}
+		m.cursor = row
+		return m, nil
 	}
 	return m, nil
 }
@@ -81,6 +152,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePickerKey(msg)
 	case OverlayPalette:
 		return m.handlePaletteKey(msg)
+	}
+
+	// Filter mode: captures sidebar typing.
+	if m.filtering {
+		return m.handleFilterKey(msg)
+	}
+	if key.Matches(msg, m.keymap.Filter) {
+		m.filtering = true
+		m.filter.Focus()
+		return m, textinputBlink
 	}
 
 	// Browse-mode keys.
@@ -141,6 +222,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if c := m.selectedConnection(); c != nil {
 			return m, m.beginConnect(c)
 		}
+		if d := m.selectedDatabase(); d != nil {
+			return m, m.launchDatabase(d)
+		}
 		if g := m.selectedGroup(); g != nil {
 			m.collapsed[g.ID] = !m.collapsed[g.ID]
 			m.rebuildRows()
@@ -185,6 +269,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) cursorToConnection(id uuid.UUID) {
 	for i, r := range m.rows {
 		if r.conn != nil && r.conn.ID == id {
+			m.cursor = i
+			return
+		}
+	}
+}
+
+// cursorToDatabase moves the sidebar cursor onto the given db row.
+func (m *Model) cursorToDatabase(id uuid.UUID) {
+	for i, r := range m.rows {
+		if r.db != nil && r.db.ID == id {
 			m.cursor = i
 			return
 		}

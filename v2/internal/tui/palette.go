@@ -31,6 +31,8 @@ type paletteField struct {
 
 func (m *Model) closePalette() {
 	m.palette = paletteState{}
+	m.paletteOpts = nil
+	m.paletteScriptIdx = 0
 	m.overlay = OverlayNone
 	m.mode = ModeBrowse
 }
@@ -244,7 +246,347 @@ func (m *Model) submitPalette() (tea.Model, tea.Cmd) {
 		return m.confirmHostKey()
 	case PaletteConfirmConnect:
 		return m.confirmConnect()
+	case PaletteImportSSH:
+		return m.submitImportSSH()
+	case PaletteNotes:
+		return m.submitNotes()
+	case PaletteScript:
+		return m.submitScript()
+	case PaletteAddDatabase:
+		return m.saveDatabase(uuid.Nil)
+	case PaletteEditDatabase:
+		return m.saveDatabase(m.palette.target)
+	case PaletteDeleteDatabase:
+		return m.deleteDatabase(m.palette.target)
 	}
+	return m, nil
+}
+
+// --- SSH command import ---
+
+func (m *Model) openImportSSHPalette() tea.Cmd {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.Placeholder = "paste a full ssh command"
+	m.palette = paletteState{
+		kind:   PaletteImportSSH,
+		title:  "Import SSH command",
+		fields: []paletteField{{label: "Cmd", input: ti}},
+	}
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return m.focusField(0)
+}
+
+func (m *Model) submitImportSSH() (tea.Model, tea.Cmd) {
+	raw := strings.TrimSpace(m.palette.fields[0].input.Value())
+	if raw == "" {
+		m.palette.err = "paste an ssh command first"
+		return m, nil
+	}
+	res, err := sshauth.ParseSSHCommand(raw)
+	if err != nil {
+		m.palette.err = err.Error()
+		return m, nil
+	}
+	// Switch to the add-connection palette prefilled from the parse.
+	m.closePalette()
+	cmd := m.openAddConnectionPalette()
+	// Prefill form fields from the parsed Connection.
+	c := res.Connection
+	m.palette.fields[connFieldName].input.SetValue(c.Name)
+	m.palette.fields[connFieldHost].input.SetValue(c.Host)
+	if c.Port != 0 && c.Port != 22 {
+		m.palette.fields[connFieldPort].input.SetValue(strconv.Itoa(c.Port))
+	}
+	m.palette.fields[connFieldUser].input.SetValue(c.User)
+	m.palette.fields[connFieldKey].input.SetValue(c.IdentityFile)
+	// The parser can't resolve a jump host to a UUID; stash the raw
+	// label as a palette message so the user knows to wire it after.
+	if res.JumpHost != "" {
+		m.palette.message = "parsed -J " + res.JumpHost + " — set the Jump target manually after save"
+	}
+	// Pin the SSHOptions on the newly-opened palette so saveConnection
+	// can carry them forward.
+	m.paletteOpts = c.SSHOptions
+	for i := range m.palette.fields {
+		m.palette.fields[i].input.CursorEnd()
+	}
+	return m, cmd
+}
+
+// --- notes ---
+
+func (m *Model) openNotesPalette(c *config.Connection) tea.Cmd {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.Placeholder = "notes"
+	ti.SetValue(c.Notes)
+	ti.CursorEnd()
+	m.palette = paletteState{
+		kind:   PaletteNotes,
+		title:  "Notes — " + c.Name,
+		fields: []paletteField{{label: "Notes", input: ti}},
+		target: c.ID,
+	}
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return m.focusField(0)
+}
+
+func (m *Model) submitNotes() (tea.Model, tea.Cmd) {
+	for i := range m.cfg.Connections {
+		if m.cfg.Connections[i].ID == m.palette.target {
+			m.cfg.Connections[i].Notes = strings.TrimSpace(m.palette.fields[0].input.Value())
+			break
+		}
+	}
+	if err := config.Save(m.cfgDir, m.cfg); err != nil {
+		m.palette.err = err.Error()
+		return m, nil
+	}
+	m.closePalette()
+	m.setToast("notes saved", toastOK)
+	return m, nil
+}
+
+// --- scripts ---
+
+type scriptPaletteContext struct {
+	connID uuid.UUID
+	index  int // -1 for new
+}
+
+func (m *Model) openAddScriptPalette(c *config.Connection) tea.Cmd {
+	return m.openScriptPalette(c, -1)
+}
+
+func (m *Model) openEditScriptPalette(c *config.Connection, idx int) tea.Cmd {
+	return m.openScriptPalette(c, idx)
+}
+
+func (m *Model) openScriptPalette(c *config.Connection, idx int) tea.Cmd {
+	nameTi := textinput.New()
+	nameTi.Prompt = ""
+	nameTi.Placeholder = "label"
+	cmdTi := textinput.New()
+	cmdTi.Prompt = ""
+	cmdTi.Placeholder = "command to run on remote"
+	if idx >= 0 && idx < len(c.Scripts) {
+		nameTi.SetValue(c.Scripts[idx].Name)
+		cmdTi.SetValue(c.Scripts[idx].Command)
+	}
+	nameTi.CursorEnd()
+	cmdTi.CursorEnd()
+	m.palette = paletteState{
+		kind:  PaletteScript,
+		title: "Script — " + c.Name,
+		fields: []paletteField{
+			{label: "Name", input: nameTi},
+			{label: "Cmd", input: cmdTi},
+		},
+		target: c.ID,
+	}
+	m.paletteScriptIdx = idx
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return m.focusField(0)
+}
+
+func (m *Model) submitScript() (tea.Model, tea.Cmd) {
+	name := strings.TrimSpace(m.palette.fields[0].input.Value())
+	cmd := strings.TrimSpace(m.palette.fields[1].input.Value())
+	if name == "" || cmd == "" {
+		m.palette.err = "name and command are required"
+		return m, nil
+	}
+	for i := range m.cfg.Connections {
+		if m.cfg.Connections[i].ID != m.palette.target {
+			continue
+		}
+		c := &m.cfg.Connections[i]
+		if m.paletteScriptIdx < 0 {
+			c.Scripts = append(c.Scripts, config.Script{Name: name, Command: cmd})
+		} else if m.paletteScriptIdx < len(c.Scripts) {
+			c.Scripts[m.paletteScriptIdx] = config.Script{Name: name, Command: cmd}
+		}
+		break
+	}
+	if err := config.Save(m.cfgDir, m.cfg); err != nil {
+		m.palette.err = err.Error()
+		return m, nil
+	}
+	m.closePalette()
+	m.setToast("script saved", toastOK)
+	return m, nil
+}
+
+// --- databases ---
+
+const (
+	dbFieldEngine = iota
+	dbFieldName
+	dbFieldHost
+	dbFieldPort
+	dbFieldUser
+	dbFieldDBName
+	dbFieldGroup
+	dbFieldPassword
+	dbFieldCount
+)
+
+var dbFieldLabels = []string{"Engine", "Name", "Host", "Port", "User", "DBName", "Group", "Pass"}
+var dbFieldHints = []string{
+	"postgres | mysql | redis | sqlite",
+	"required",
+	"host or /path/to/file for sqlite",
+	"",
+	"",
+	"",
+	"group path, blank for ungrouped",
+	"stored in keychain; or $(cmd)",
+}
+
+func (m *Model) openAddDatabasePalette() tea.Cmd {
+	return m.openDatabasePalette(PaletteAddDatabase, "New Database", nil)
+}
+func (m *Model) openEditDatabasePalette(d *config.Database) tea.Cmd {
+	return m.openDatabasePalette(PaletteEditDatabase, "Edit "+d.Name, d)
+}
+func (m *Model) openDatabasePalette(kind PaletteKind, title string, d *config.Database) tea.Cmd {
+	fields := make([]paletteField, dbFieldCount)
+	for i := range fields {
+		ti := textinput.New()
+		ti.Prompt = ""
+		ti.Placeholder = dbFieldHints[i]
+		if i == dbFieldPassword {
+			ti.EchoMode = textinput.EchoPassword
+		}
+		fields[i] = paletteField{label: dbFieldLabels[i], hint: dbFieldHints[i], input: ti}
+	}
+	if d != nil {
+		fields[dbFieldEngine].input.SetValue(d.Engine)
+		fields[dbFieldName].input.SetValue(d.Name)
+		fields[dbFieldHost].input.SetValue(d.Host)
+		if d.Port != 0 {
+			fields[dbFieldPort].input.SetValue(strconv.Itoa(d.Port))
+		}
+		fields[dbFieldUser].input.SetValue(d.User)
+		fields[dbFieldDBName].input.SetValue(d.DBName)
+		fields[dbFieldGroup].input.SetValue(config.GroupPath(m.cfg, d.Group))
+		if d.Password != "" {
+			fields[dbFieldPassword].input.SetValue(d.Password)
+		} else if pw, _ := sshauth.GetPassword(d.ID.String()); pw != "" {
+			fields[dbFieldPassword].input.SetValue(pw)
+		}
+	}
+	for i := range fields {
+		fields[i].input.CursorEnd()
+	}
+	m.palette = paletteState{kind: kind, title: title, fields: fields}
+	if d != nil {
+		m.palette.target = d.ID
+	}
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return m.focusField(0)
+}
+
+func (m *Model) openDeleteDatabasePalette(d *config.Database) tea.Cmd {
+	m.palette = paletteState{
+		kind:    PaletteDeleteDatabase,
+		title:   "Delete database",
+		message: "Delete " + d.Name + "? (y/n)",
+		target:  d.ID,
+	}
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return nil
+}
+
+func (m *Model) saveDatabase(id uuid.UUID) (tea.Model, tea.Cmd) {
+	engine := strings.ToLower(strings.TrimSpace(m.palette.fields[dbFieldEngine].input.Value()))
+	name := strings.TrimSpace(m.palette.fields[dbFieldName].input.Value())
+	if name == "" {
+		m.palette.err = "name is required"
+		return m, nil
+	}
+	switch engine {
+	case "postgres", "mysql", "redis", "sqlite":
+	default:
+		m.palette.err = "engine must be postgres, mysql, redis, or sqlite"
+		return m, nil
+	}
+	port := 0
+	if ps := strings.TrimSpace(m.palette.fields[dbFieldPort].input.Value()); ps != "" {
+		n, err := strconv.Atoi(ps)
+		if err != nil {
+			m.palette.err = "port must be an integer"
+			return m, nil
+		}
+		port = n
+	}
+	gpath := strings.TrimSpace(m.palette.fields[dbFieldGroup].input.Value())
+	gID, err := m.resolveOrCreateGroupPath(gpath)
+	if err != nil {
+		m.palette.err = err.Error()
+		return m, nil
+	}
+	password := strings.TrimSpace(m.palette.fields[dbFieldPassword].input.Value())
+	d := config.Database{
+		Name:   name,
+		Engine: engine,
+		Host:   strings.TrimSpace(m.palette.fields[dbFieldHost].input.Value()),
+		Port:   port,
+		User:   strings.TrimSpace(m.palette.fields[dbFieldUser].input.Value()),
+		DBName: strings.TrimSpace(m.palette.fields[dbFieldDBName].input.Value()),
+		Group:  gID,
+	}
+	if sshauth.IsCommandValue(password) {
+		d.Password = password
+	}
+	if id == uuid.Nil {
+		d.ID = uuid.New()
+		m.cfg.Databases = append(m.cfg.Databases, d)
+	} else {
+		d.ID = id
+		for i := range m.cfg.Databases {
+			if m.cfg.Databases[i].ID == id {
+				m.cfg.Databases[i] = d
+				break
+			}
+		}
+	}
+	if password != "" && !sshauth.IsCommandValue(password) {
+		_ = sshauth.SetPassword(d.ID.String(), password)
+	}
+	if err := config.Save(m.cfgDir, m.cfg); err != nil {
+		m.palette.err = err.Error()
+		return m, nil
+	}
+	m.rebuildRows()
+	m.closePalette()
+	m.setToast("saved "+d.Name, toastOK)
+	return m, nil
+}
+
+func (m *Model) deleteDatabase(id uuid.UUID) (tea.Model, tea.Cmd) {
+	for i := range m.cfg.Databases {
+		if m.cfg.Databases[i].ID == id {
+			name := m.cfg.Databases[i].Name
+			m.cfg.Databases = append(m.cfg.Databases[:i], m.cfg.Databases[i+1:]...)
+			_ = sshauth.DeletePassword(id.String())
+			if err := config.Save(m.cfgDir, m.cfg); err != nil {
+				m.palette.err = err.Error()
+				return m, nil
+			}
+			m.rebuildRows()
+			m.closePalette()
+			m.setToast("deleted "+name, toastOK)
+			return m, nil
+		}
+	}
+	m.closePalette()
 	return m, nil
 }
 
@@ -284,6 +626,7 @@ func (m *Model) saveConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 		Group:         gID,
 		Tags:          tags,
 		RemoteCommand: rc,
+		SSHOptions:    m.paletteOpts,
 	}
 	if sshauth.IsCommandValue(password) {
 		conn.Password = password

@@ -42,6 +42,12 @@ func (m *Model) leaderBindings() []leaderBinding {
 		{"g", "new group", func(m *Model) tea.Cmd { return m.openAddGroupPalette() }},
 		{"p", "connection picker", func(m *Model) tea.Cmd { return m.cmdConn("") }},
 		{"G", "group picker", func(m *Model) tea.Cmd { return m.cmdGroup("") }},
+		{"D", "database picker", func(m *Model) tea.Cmd { return m.cmdDB("") }},
+		{"i", "import ssh command", func(m *Model) tea.Cmd { return m.cmdImport("") }},
+		{"o", "edit notes", func(m *Model) tea.Cmd { return m.cmdNotes("") }},
+		{"s", "add script to selected", func(m *Model) tea.Cmd { return m.cmdAddScript("") }},
+		{"r", "run a script on selected", func(m *Model) tea.Cmd { return m.openScriptRunner() }},
+		{"b", "add database", func(m *Model) tea.Cmd { return m.cmdAddDB("") }},
 		{"?", "help", func(m *Model) tea.Cmd {
 			m.overlay = OverlayHelp
 			m.showAll = true

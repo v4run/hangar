@@ -96,28 +96,43 @@ func (m Model) renderSidebar(w, h int) string {
 	if h < 1 {
 		return ""
 	}
+	var b strings.Builder
+	// Filter row (always visible — either input or hint).
+	switch {
+	case m.filtering:
+		b.WriteString(m.filter.View())
+	case m.filter.Value() != "":
+		b.WriteString(theme.Dim.Render("/ " + m.filter.Value()))
+	default:
+		b.WriteString(theme.Hint.Render("/ filter"))
+	}
+	b.WriteString("\n\n")
+	listH := h - 2
+	if listH < 1 {
+		return b.String()
+	}
 	rows := m.rows
 	// adjust viewport
 	offset := m.offset
 	if m.cursor < offset {
 		offset = m.cursor
 	}
-	if m.cursor >= offset+h {
-		offset = m.cursor - h + 1
+	if m.cursor >= offset+listH {
+		offset = m.cursor - listH + 1
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	end := offset + h
+	end := offset + listH
 	if end > len(rows) {
 		end = len(rows)
 	}
-
-	var b strings.Builder
 	for i := offset; i < end; i++ {
-		r := rows[i]
-		b.WriteString(m.renderRow(r, i == m.cursor, w))
+		b.WriteString(m.renderRow(rows[i], i == m.cursor, w))
 		b.WriteString("\n")
+	}
+	if len(rows) == 0 {
+		b.WriteString(theme.Dim.Render("  (no matches)"))
 	}
 	return b.String()
 }
@@ -165,9 +180,9 @@ func (m Model) renderDetail(w, h int) string {
 	case TabDetails:
 		body = m.renderDetailsTab(w)
 	case TabScripts:
-		body = theme.Dim.Render("  (scripts tab coming in alpha.2)")
+		body = m.renderScriptsTab(w)
 	case TabForwards:
-		body = theme.Dim.Render("  (port forwards tab coming in alpha.2)")
+		body = m.renderForwardsTab(w)
 	case TabNotes:
 		body = m.renderNotesTab(w)
 	}
@@ -292,6 +307,59 @@ func (m Model) renderGroupDetails(g *config.Group) string {
 	}
 	write("Subgroups", fmt.Sprintf("%d", kids))
 	write("Conns", fmt.Sprintf("%d", conns))
+	return b.String()
+}
+
+func (m Model) renderScriptsTab(w int) string {
+	c := m.selectedConnection()
+	if c == nil {
+		return theme.Dim.Render("  (nothing selected)")
+	}
+	r := config.Resolve(m.cfg, c)
+	if len(r.Scripts) == 0 {
+		return theme.Dim.Render("  (no scripts — leader s to add)")
+	}
+	var b strings.Builder
+	for i, s := range r.Scripts {
+		marker := "•"
+		if i < len(c.Scripts) {
+			marker = theme.Cursor.Render("•")
+		} else {
+			marker = theme.Dim.Render("•")
+		}
+		fmt.Fprintf(&b, "  %s %s\n", marker, theme.Normal.Render(s.Name))
+		fmt.Fprintf(&b, "      %s\n", theme.Dim.Render("$ "+s.Command))
+	}
+	b.WriteString("\n")
+	b.WriteString(theme.Dim.Render("  leader s: new   leader e: edit selected (coming in alpha.2)"))
+	return b.String()
+}
+
+func (m Model) renderForwardsTab(w int) string {
+	c := m.selectedConnection()
+	if c == nil {
+		return theme.Dim.Render("  (nothing selected)")
+	}
+	r := config.Resolve(m.cfg, c)
+	if r.SSHOptions == nil || (len(r.SSHOptions.LocalForward) == 0 && len(r.SSHOptions.RemoteForward) == 0) {
+		return theme.Dim.Render("  (no port forwards configured)")
+	}
+	var b strings.Builder
+	if len(r.SSHOptions.LocalForward) > 0 {
+		b.WriteString(theme.Label.Render("  Local → remote"))
+		b.WriteString("\n")
+		for _, lf := range r.SSHOptions.LocalForward {
+			fmt.Fprintf(&b, "    %s\n", theme.Normal.Render(lf))
+		}
+	}
+	if len(r.SSHOptions.RemoteForward) > 0 {
+		b.WriteString("\n")
+		b.WriteString(theme.Label.Render("  Remote → local"))
+		b.WriteString("\n")
+		for _, rf := range r.SSHOptions.RemoteForward {
+			fmt.Fprintf(&b, "    %s\n", theme.Normal.Render(rf))
+		}
+	}
 	return b.String()
 }
 

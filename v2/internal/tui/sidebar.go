@@ -2,19 +2,76 @@ package tui
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/v4run/hangar/v2/internal/config"
 )
 
+// groupContainsMatch returns true if g (or a descendant) has a
+// connection / database that matches the filter predicates. Used so
+// filter mode never shows an empty group header.
+func groupContainsMatch(
+	cfg *config.Config,
+	g uuid.UUID,
+	connOK func(*config.Connection) bool,
+	dbOK func(*config.Database) bool,
+	kids map[uuid.UUID][]int,
+	conns map[uuid.UUID][]int,
+	dbs map[uuid.UUID][]int,
+) bool {
+	for _, ci := range conns[g] {
+		if connOK(&cfg.Connections[ci]) {
+			return true
+		}
+	}
+	for _, di := range dbs[g] {
+		if dbOK(&cfg.Databases[di]) {
+			return true
+		}
+	}
+	for _, ki := range kids[g] {
+		if groupContainsMatch(cfg, cfg.Groups[ki].ID, connOK, dbOK, kids, conns, dbs) {
+			return true
+		}
+	}
+	return false
+}
+
 // rebuildRows flattens the group tree + connections into the ordered
 // row list the sidebar renders. Collapsed groups hide their children.
+// If the filter is non-empty, any row whose Keywords miss the query
+// is skipped; its ancestor group chain stays visible so matches
+// render in context.
 func (m *Model) rebuildRows() {
 	m.rows = m.rows[:0]
 	cfg := m.cfg
 	if cfg == nil {
 		return
+	}
+	q := strings.ToLower(strings.TrimSpace(m.filter.Value()))
+	connMatches := func(c *config.Connection) bool {
+		if q == "" {
+			return true
+		}
+		if strings.Contains(strings.ToLower(c.Name), q) ||
+			strings.Contains(strings.ToLower(c.Host), q) ||
+			strings.Contains(strings.ToLower(c.User), q) {
+			return true
+		}
+		for _, t := range c.Tags {
+			if strings.Contains(strings.ToLower(t), q) {
+				return true
+			}
+		}
+		return strings.Contains(strings.ToLower(config.GroupPath(cfg, c.Group)), q)
+	}
+	dbMatches := func(d *config.Database) bool {
+		if q == "" {
+			return true
+		}
+		return strings.Contains(strings.ToLower(d.Name+" "+d.Host+" "+d.Engine), q)
 	}
 
 	// Index groups by parent (slice of indices into cfg.Groups).
@@ -56,38 +113,52 @@ func (m *Model) rebuildRows() {
 
 	// Ungrouped items first (no header if none exist).
 	for _, i := range connsByGroup[uuid.Nil] {
-		m.rows = append(m.rows, row{kind: rowConnection, conn: &cfg.Connections[i]})
+		c := &cfg.Connections[i]
+		if !connMatches(c) {
+			continue
+		}
+		m.rows = append(m.rows, row{kind: rowConnection, conn: c})
 	}
 	for _, i := range dbsByGroup[uuid.Nil] {
-		m.rows = append(m.rows, row{kind: rowDatabase, db: &cfg.Databases[i]})
+		d := &cfg.Databases[i]
+		if !dbMatches(d) {
+			continue
+		}
+		m.rows = append(m.rows, row{kind: rowDatabase, db: d})
 	}
 
-	// Depth-first walk of the group tree.
+	// Depth-first walk of the group tree. When filtering, a group row
+	// is only emitted if it or a descendant matches.
 	var walk func(parent uuid.UUID, depth int)
 	walk = func(parent uuid.UUID, depth int) {
 		for _, gi := range childrenOf[parent] {
 			g := &cfg.Groups[gi]
-			m.rows = append(m.rows, row{kind: rowGroup, depth: depth, group: g})
-			if m.collapsed[g.ID] {
+			// When filtering, skip the group entirely unless it
+			// contains at least one matching row.
+			if q != "" && !groupContainsMatch(cfg, g.ID, connMatches, dbMatches, childrenOf, connsByGroup, dbsByGroup) {
 				continue
 			}
-			// Child groups (recursive).
-			walk(g.ID, depth+1)
-			// Connections directly under this group.
-			for _, ci := range connsByGroup[g.ID] {
-				m.rows = append(m.rows, row{
-					kind:  rowConnection,
-					depth: depth + 1,
-					conn:  &cfg.Connections[ci],
-				})
+			m.rows = append(m.rows, row{kind: rowGroup, depth: depth, group: g})
+			// Collapsed groups still hide children UNLESS the user is
+			// filtering: filter mode auto-expands matches so hits are
+			// visible without pressing right-arrow on every row.
+			if m.collapsed[g.ID] && q == "" {
+				continue
 			}
-			// Databases.
+			walk(g.ID, depth+1)
+			for _, ci := range connsByGroup[g.ID] {
+				c := &cfg.Connections[ci]
+				if !connMatches(c) {
+					continue
+				}
+				m.rows = append(m.rows, row{kind: rowConnection, depth: depth + 1, conn: c})
+			}
 			for _, di := range dbsByGroup[g.ID] {
-				m.rows = append(m.rows, row{
-					kind:  rowDatabase,
-					depth: depth + 1,
-					db:    &cfg.Databases[di],
-				})
+				d := &cfg.Databases[di]
+				if !dbMatches(d) {
+					continue
+				}
+				m.rows = append(m.rows, row{kind: rowDatabase, depth: depth + 1, db: d})
 			}
 		}
 	}
@@ -117,6 +188,11 @@ func (m *Model) selectedConnection() *config.Connection {
 // selectedGroup returns the group under the cursor, or nil.
 func (m *Model) selectedGroup() *config.Group {
 	return m.selectedRow().group
+}
+
+// selectedDatabase returns the database under the cursor, or nil.
+func (m *Model) selectedDatabase() *config.Database {
+	return m.selectedRow().db
 }
 
 // adjustSidebarViewport keeps m.cursor within the visible window.

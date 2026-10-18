@@ -18,11 +18,17 @@ type Command struct {
 func (m *Model) commands() []Command {
 	return []Command{
 		{"conn", "list connections (fuzzy picker)", (*Model).cmdConn},
+		{"db", "list databases (fuzzy picker)", (*Model).cmdDB},
 		{"group", "list groups (fuzzy picker)", (*Model).cmdGroup},
 		{"add", "add a new connection", (*Model).cmdAdd},
-		{"edit", "edit the selected connection", (*Model).cmdEdit},
-		{"delete", "delete the selected connection", (*Model).cmdDelete},
+		{"adddb", "add a new database", (*Model).cmdAddDB},
+		{"edit", "edit the selected connection / db / group", (*Model).cmdEdit},
+		{"delete", "delete the selected connection / db", (*Model).cmdDelete},
 		{"newgroup", "create a group", (*Model).cmdNewGroup},
+		{"notes", "edit notes on the selected connection", (*Model).cmdNotes},
+		{"import", "paste an ssh command to prefill a new connection", (*Model).cmdImport},
+		{"addscript", "add a script to the selected connection", (*Model).cmdAddScript},
+		{"run", "run a script on the selected connection", (*Model).cmdRunScript},
 		{"help", "show help overlay", (*Model).cmdHelp},
 		{"quit", "quit", (*Model).cmdQuit},
 	}
@@ -119,21 +125,60 @@ func (m *Model) cmdGroup(_ string) tea.Cmd {
 }
 
 func (m *Model) cmdAdd(_ string) tea.Cmd { return m.openAddConnectionPalette() }
+func (m *Model) cmdAddDB(_ string) tea.Cmd { return m.openAddDatabasePalette() }
 func (m *Model) cmdEdit(_ string) tea.Cmd {
 	if c := m.selectedConnection(); c != nil {
 		return m.openEditConnectionPalette(c)
 	}
-	m.setToast("no connection under cursor", toastErr)
+	if d := m.selectedDatabase(); d != nil {
+		return m.openEditDatabasePalette(d)
+	}
+	if g := m.selectedGroup(); g != nil {
+		return m.openEditGroupPalette(g)
+	}
+	m.setToast("nothing under cursor", toastErr)
 	return nil
 }
 func (m *Model) cmdDelete(_ string) tea.Cmd {
 	if c := m.selectedConnection(); c != nil {
 		return m.openDeleteConnectionPalette(c)
 	}
-	m.setToast("no connection under cursor", toastErr)
+	if d := m.selectedDatabase(); d != nil {
+		return m.openDeleteDatabasePalette(d)
+	}
+	m.setToast("no connection or db under cursor", toastErr)
 	return nil
 }
 func (m *Model) cmdNewGroup(_ string) tea.Cmd { return m.openAddGroupPalette() }
+func (m *Model) cmdNotes(_ string) tea.Cmd {
+	if c := m.selectedConnection(); c != nil {
+		return m.openNotesPalette(c)
+	}
+	m.setToast("no connection under cursor", toastErr)
+	return nil
+}
+func (m *Model) cmdImport(_ string) tea.Cmd { return m.openImportSSHPalette() }
+func (m *Model) cmdAddScript(_ string) tea.Cmd {
+	if c := m.selectedConnection(); c != nil {
+		return m.openAddScriptPalette(c)
+	}
+	m.setToast("no connection under cursor", toastErr)
+	return nil
+}
+func (m *Model) cmdRunScript(_ string) tea.Cmd { return m.openScriptRunner() }
+func (m *Model) cmdDB(_ string) tea.Cmd {
+	items := make([]Pickable, 0, len(m.cfg.Databases))
+	for i := range m.cfg.Databases {
+		items = append(items, dbPickable{cfg: m.cfg, db: &m.cfg.Databases[i]})
+	}
+	return m.openPicker("Databases", items, func(p Pickable) tea.Cmd {
+		if dp, ok := p.(dbPickable); ok {
+			m.cursorToDatabase(dp.db.ID)
+			return m.launchDatabase(dp.db)
+		}
+		return nil
+	})
+}
 func (m *Model) cmdHelp(_ string) tea.Cmd {
 	m.overlay = OverlayHelp
 	m.showAll = true
