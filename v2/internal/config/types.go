@@ -25,6 +25,7 @@ type Group struct {
 	ID         uuid.UUID   `yaml:"id"`
 	Name       string      `yaml:"name"`
 	Parent     uuid.UUID   `yaml:"parent,omitempty"`
+	Order      int         `yaml:"order,omitempty"` // sort key within the parent — mixes with Connection/Database.Order
 	User       string      `yaml:"user,omitempty"`
 	IdentityFile string    `yaml:"identity_file,omitempty"`
 	JumpHost   uuid.UUID   `yaml:"jump_host,omitempty"`
@@ -44,6 +45,7 @@ type Connection struct {
 	User          string      `yaml:"user,omitempty"`
 	IdentityFile  string      `yaml:"identity_file,omitempty"`
 	Group         uuid.UUID   `yaml:"group,omitempty"`
+	Order         int         `yaml:"order,omitempty"` // sort key within Group — mixes with Group/Database.Order
 	JumpHost      uuid.UUID   `yaml:"jump_host,omitempty"`
 	Tags          []string    `yaml:"tags,omitempty"`
 	SSHOptions    *SSHOptions `yaml:"ssh_options,omitempty"`
@@ -88,6 +90,7 @@ type Database struct {
 	DBName   string            `yaml:"dbname,omitempty"`
 	TunnelVia uuid.UUID        `yaml:"tunnel_via,omitempty"` // connection to tunnel through
 	Group    uuid.UUID         `yaml:"group,omitempty"`
+	Order    int               `yaml:"order,omitempty"`
 	Tags     []string          `yaml:"tags,omitempty"`
 	Notes    string            `yaml:"notes,omitempty"`
 	Password string            `yaml:"password,omitempty"`

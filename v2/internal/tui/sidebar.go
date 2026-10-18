@@ -1,12 +1,68 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/v4run/hangar/v2/internal/config"
 )
+
+// orderedChildren returns every direct child row (sub-group,
+// connection, database) of `parent` sorted by (Order asc, name asc)
+// so a connection with Order=5 can sit between two groups with Order
+// 4 and 6. Ties fall back to name for stability.
+func (m *Model) orderedChildren(
+	parent uuid.UUID,
+	kids map[uuid.UUID][]int,
+	conns map[uuid.UUID][]int,
+	dbs map[uuid.UUID][]int,
+) []row {
+	cfg := m.cfg
+	var out []row
+	for _, gi := range kids[parent] {
+		out = append(out, row{kind: rowGroup, group: &cfg.Groups[gi]})
+	}
+	for _, ci := range conns[parent] {
+		out = append(out, row{kind: rowConnection, conn: &cfg.Connections[ci]})
+	}
+	for _, di := range dbs[parent] {
+		out = append(out, row{kind: rowDatabase, db: &cfg.Databases[di]})
+	}
+	sort.SliceStable(out, func(a, b int) bool {
+		oa, ob := rowOrder(out[a]), rowOrder(out[b])
+		if oa != ob {
+			return oa < ob
+		}
+		return rowSortName(out[a]) < rowSortName(out[b])
+	})
+	return out
+}
+
+func rowOrder(r row) int {
+	switch r.kind {
+	case rowGroup:
+		return r.group.Order
+	case rowConnection:
+		return r.conn.Order
+	case rowDatabase:
+		return r.db.Order
+	}
+	return 0
+}
+
+func rowSortName(r row) string {
+	switch r.kind {
+	case rowGroup:
+		return r.group.Name
+	case rowConnection:
+		return r.conn.Name
+	case rowDatabase:
+		return r.db.Name
+	}
+	return ""
+}
 
 // groupContainsMatch returns true if g (or a descendant) has a
 // connection / database that matches the filter predicates. Used so
@@ -112,58 +168,38 @@ func (m *Model) rebuildRows() {
 		}
 	}
 
-	// Ungrouped items first (no header if none exist).
-	for _, i := range connsByGroup[uuid.Nil] {
-		c := &cfg.Connections[i]
-		if !connMatches(c) {
-			continue
-		}
-		m.rows = append(m.rows, row{kind: rowConnection, conn: c})
-	}
-	for _, i := range dbsByGroup[uuid.Nil] {
-		d := &cfg.Databases[i]
-		if !dbMatches(d) {
-			continue
-		}
-		m.rows = append(m.rows, row{kind: rowDatabase, db: d})
-	}
-
-	// Depth-first walk of the group tree. When filtering, a group row
-	// is only emitted if it or a descendant matches.
-	var walk func(parent uuid.UUID, depth int)
-	walk = func(parent uuid.UUID, depth int) {
-		for _, gi := range childrenOf[parent] {
-			g := &cfg.Groups[gi]
-			// When filtering, skip the group entirely unless it
-			// contains at least one matching row.
-			if q != "" && !groupContainsMatch(cfg, g.ID, connMatches, dbMatches, childrenOf, connsByGroup, dbsByGroup) {
-				continue
-			}
-			m.rows = append(m.rows, row{kind: rowGroup, depth: depth, group: g})
-			// Collapsed groups still hide children UNLESS the user is
-			// filtering: filter mode auto-expands matches so hits are
-			// visible without pressing right-arrow on every row.
-			if m.collapsed[g.ID] && q == "" {
-				continue
-			}
-			walk(g.ID, depth+1)
-			for _, ci := range connsByGroup[g.ID] {
-				c := &cfg.Connections[ci]
-				if !connMatches(c) {
+	// Depth-first walk of the group tree. For each parent, children
+	// (sub-groups + connections + databases) are interleaved by their
+	// stored Order and emitted in that single sequence — so a
+	// connection can sit between two groups at the same depth.
+	var emit func(parent uuid.UUID, depth int)
+	emit = func(parent uuid.UUID, depth int) {
+		for _, child := range m.orderedChildren(parent, childrenOf, connsByGroup, dbsByGroup) {
+			switch child.kind {
+			case rowGroup:
+				g := child.group
+				if q != "" && !groupContainsMatch(cfg, g.ID, connMatches, dbMatches, childrenOf, connsByGroup, dbsByGroup) {
 					continue
 				}
-				m.rows = append(m.rows, row{kind: rowConnection, depth: depth + 1, conn: c})
-			}
-			for _, di := range dbsByGroup[g.ID] {
-				d := &cfg.Databases[di]
-				if !dbMatches(d) {
+				m.rows = append(m.rows, row{kind: rowGroup, depth: depth, group: g})
+				if m.collapsed[g.ID] && q == "" {
 					continue
 				}
-				m.rows = append(m.rows, row{kind: rowDatabase, depth: depth + 1, db: d})
+				emit(g.ID, depth+1)
+			case rowConnection:
+				if !connMatches(child.conn) {
+					continue
+				}
+				m.rows = append(m.rows, row{kind: rowConnection, depth: depth, conn: child.conn})
+			case rowDatabase:
+				if !dbMatches(child.db) {
+					continue
+				}
+				m.rows = append(m.rows, row{kind: rowDatabase, depth: depth, db: child.db})
 			}
 		}
 	}
-	walk(uuid.Nil, 0)
+	emit(uuid.Nil, 0)
 
 	if m.cursor >= len(m.rows) {
 		m.cursor = len(m.rows) - 1

@@ -6,125 +6,128 @@ import (
 	"github.com/v4run/hangar/v2/internal/config"
 )
 
-// moveSelectedBy swaps the selected connection or database with the
-// previous (dir=-1) or next (+1) sibling within the same group. For
-// a selected group row it swaps with the previous / next sibling
-// group under the same parent. Connections and groups are reordered
-// *within their peers only* so inheritance isn't accidentally
-// restructured. Saves the config after a swap.
+// moveSelectedBy moves the selected row up (-1) or down (+1) within
+// its *combined* sibling list — groups, connections and databases
+// share one position namespace per parent, so a connection can sit
+// between two groups. Writes the resulting Order fields back to the
+// slices and saves.
+func moveSelectedBy_unused() {} // keep godoc happy — kept the old name for grep history
+
 func (m *Model) moveSelectedBy(dir int) {
 	if dir == 0 {
 		return
 	}
 	r := m.selectedRow()
-	// Capture IDs BEFORE the swap — the row's *config.Group /
-	// *config.Connection / *config.Database pointers index into the
-	// backing slice, and after a swap they point at whatever was
-	// moved INTO that slot (not the item we moved).
-	var kind rowKind
-	var id uuid.UUID
-	switch {
-	case r.conn != nil:
-		kind, id = rowConnection, r.conn.ID
-		m.swapConn(r.conn, dir)
-	case r.db != nil:
-		kind, id = rowDatabase, r.db.ID
-		m.swapDB(r.db, dir)
-	case r.group != nil:
-		kind, id = rowGroup, r.group.ID
-		m.swapGroup(r.group, dir)
-	default:
+	if r.conn == nil && r.db == nil && r.group == nil {
 		return
 	}
-	_ = config.Save(m.cfgDir, m.cfg)
+
+	// Which parent are we reordering within?
+	var parent uuid.UUID
+	switch {
+	case r.conn != nil:
+		parent = r.conn.Group
+	case r.db != nil:
+		parent = r.db.Group
+	case r.group != nil:
+		parent = r.group.Parent
+	}
+
+	// Pull the combined sibling list in current rendered order.
+	kids, conns, dbs := m.childLookups()
+	siblings := m.orderedChildren(parent, kids, conns, dbs)
+
+	// Find the moved row in that list by id.
+	id := rowID(r)
+	meAt := -1
+	for i, s := range siblings {
+		if rowID(s) == id {
+			meAt = i
+			break
+		}
+	}
+	newPos := meAt + dir
+	if meAt < 0 || newPos < 0 || newPos >= len(siblings) {
+		return
+	}
+	// Swap positions in the slice.
+	siblings[meAt], siblings[newPos] = siblings[newPos], siblings[meAt]
+
+	// Renumber Order fields densely so adjacent moves stay stable.
+	for i, s := range siblings {
+		m.setRowOrder(s, i)
+	}
+
+	if err := config.Save(m.cfgDir, m.cfg); err != nil {
+		m.setToast("save: "+err.Error(), toastErr)
+		return
+	}
 	m.rebuildRows()
-	switch kind {
-	case rowConnection:
+	switch {
+	case r.conn != nil:
 		m.cursorToConnection(id)
-	case rowDatabase:
+	case r.db != nil:
 		m.cursorToDatabase(id)
-	case rowGroup:
+	case r.group != nil:
 		m.cursorToGroup(id)
 	}
 }
 
-func (m *Model) swapConn(c *config.Connection, dir int) {
-	// Find peers (same group) and the index of c among them.
-	var peers []int
-	for i := range m.cfg.Connections {
-		if m.cfg.Connections[i].Group == c.Group {
-			peers = append(peers, i)
-		}
-	}
-	meAt := -1
-	for pi, idx := range peers {
-		if m.cfg.Connections[idx].ID == c.ID {
-			meAt = pi
-			break
-		}
-	}
-	if meAt < 0 {
-		return
-	}
-	newPos := meAt + dir
-	if newPos < 0 || newPos >= len(peers) {
-		return
-	}
-	a, b := peers[meAt], peers[newPos]
-	m.cfg.Connections[a], m.cfg.Connections[b] = m.cfg.Connections[b], m.cfg.Connections[a]
-}
-
-func (m *Model) swapDB(d *config.Database, dir int) {
-	var peers []int
-	for i := range m.cfg.Databases {
-		if m.cfg.Databases[i].Group == d.Group {
-			peers = append(peers, i)
-		}
-	}
-	meAt := -1
-	for pi, idx := range peers {
-		if m.cfg.Databases[idx].ID == d.ID {
-			meAt = pi
-			break
-		}
-	}
-	if meAt < 0 {
-		return
-	}
-	newPos := meAt + dir
-	if newPos < 0 || newPos >= len(peers) {
-		return
-	}
-	a, b := peers[meAt], peers[newPos]
-	m.cfg.Databases[a], m.cfg.Databases[b] = m.cfg.Databases[b], m.cfg.Databases[a]
-}
-
-func (m *Model) swapGroup(g *config.Group, dir int) {
-	var peers []int
-	parent := g.Parent
+// childLookups is a shared "index by parent" helper used by both the
+// sidebar walk and reorder — kept out of orderedChildren so callers
+// can share a single pass.
+func (m *Model) childLookups() (kids, conns, dbs map[uuid.UUID][]int) {
+	kids = map[uuid.UUID][]int{}
 	for i := range m.cfg.Groups {
-		if m.cfg.Groups[i].Parent == parent {
-			peers = append(peers, i)
-		}
+		kids[m.cfg.Groups[i].Parent] = append(kids[m.cfg.Groups[i].Parent], i)
 	}
-	meAt := -1
-	for pi, idx := range peers {
-		if m.cfg.Groups[idx].ID == g.ID {
-			meAt = pi
-			break
-		}
+	conns = map[uuid.UUID][]int{}
+	for i := range m.cfg.Connections {
+		conns[m.cfg.Connections[i].Group] = append(conns[m.cfg.Connections[i].Group], i)
 	}
-	if meAt < 0 {
-		return
+	dbs = map[uuid.UUID][]int{}
+	for i := range m.cfg.Databases {
+		dbs[m.cfg.Databases[i].Group] = append(dbs[m.cfg.Databases[i].Group], i)
 	}
-	newPos := meAt + dir
-	if newPos < 0 || newPos >= len(peers) {
-		return
-	}
-	a, b := peers[meAt], peers[newPos]
-	m.cfg.Groups[a], m.cfg.Groups[b] = m.cfg.Groups[b], m.cfg.Groups[a]
+	return
 }
 
-// used indirectly to shut the compiler up about an unused symbol
-// when reorder.go is the only file importing uuid.
-var _ = uuid.Nil
+// setRowOrder writes `n` into the Order field of the row's backing
+// struct in m.cfg (not into the row copy — row holds pointers).
+func (m *Model) setRowOrder(r row, n int) {
+	switch r.kind {
+	case rowGroup:
+		for i := range m.cfg.Groups {
+			if m.cfg.Groups[i].ID == r.group.ID {
+				m.cfg.Groups[i].Order = n
+				return
+			}
+		}
+	case rowConnection:
+		for i := range m.cfg.Connections {
+			if m.cfg.Connections[i].ID == r.conn.ID {
+				m.cfg.Connections[i].Order = n
+				return
+			}
+		}
+	case rowDatabase:
+		for i := range m.cfg.Databases {
+			if m.cfg.Databases[i].ID == r.db.ID {
+				m.cfg.Databases[i].Order = n
+				return
+			}
+		}
+	}
+}
+
+func rowID(r row) uuid.UUID {
+	switch r.kind {
+	case rowGroup:
+		return r.group.ID
+	case rowConnection:
+		return r.conn.ID
+	case rowDatabase:
+		return r.db.ID
+	}
+	return uuid.Nil
+}
