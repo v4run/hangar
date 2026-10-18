@@ -45,9 +45,11 @@ var (
 	// Caret for text input.
 	Cursor = lipgloss.NewStyle().Foreground(Accent).Bold(true)
 
-	// Selected sidebar row.
+	// Selected sidebar row — bold accent fg + a soft background
+	// highlight so the selection is unmissable even on wide rows.
 	Selected = lipgloss.NewStyle().
 			Foreground(Accent).
+			Background(BgAlt).
 			Bold(true)
 
 	// Row currently in focus (hovered but not activated).

@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 
 	"github.com/v4run/hangar/v2/internal/config"
@@ -208,12 +209,15 @@ func (m Model) renderRow(r row, selected bool, width int) string {
 }
 
 // clipLine applies the selected-row styling or truncates to width.
+// For selected rows we strip the per-segment escape sequences first
+// — otherwise the inner `\x1b[0m` resets terminate our outer style
+// mid-line and the row doesn't look highlighted.
 func clipLine(line string, width int, selected bool) string {
 	if lipgloss.Width(line) > width {
 		line = truncate(line, width)
 	}
 	if selected {
-		return theme.Selected.Render(line)
+		return theme.Selected.Render(ansi.Strip(line))
 	}
 	return line
 }
