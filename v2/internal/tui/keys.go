@@ -117,7 +117,7 @@ func DefaultKeymap() KeyMap {
 		Yank:            b([]string{"y"}, "y", "copy marked rows (paste with p)"),
 		Cut:             b([]string{"x"}, "x", "cut marked rows (paste moves them)"),
 		Paste:           b([]string{"p"}, "p", "paste into the cursor's group"),
-		Quit:     b([]string{"q", "ctrl+c"}, "q", "quit"),
+		Quit:     b([]string{"q"}, "q", "quit (ctrl+c also quits from the sidebar; closes overlays elsewhere)"),
 		Esc:      b([]string{"esc"}, "esc", "cancel"),
 	}
 }

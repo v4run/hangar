@@ -233,6 +233,27 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// ctrl+c closes overlays / modals when one is open, so the user
+	// never gets trapped. It only quits the app from a clean sidebar
+	// view. Also exits visual mode / filter mode if active.
+	if msg.String() == "ctrl+c" {
+		if m.overlay != OverlayNone {
+			msg = tea.KeyMsg{Type: tea.KeyEsc}
+		} else if m.visualMode {
+			m.exitVisual()
+			return m, nil
+		} else if m.filtering {
+			m.filtering = false
+			m.filter.Blur()
+			m.filter.SetValue("")
+			m.rebuildRows()
+			m.cursor = 0
+			return m, nil
+		} else {
+			return m, tea.Quit
+		}
+	}
+
 	// Help overlay captures all keys.
 	if m.overlay == OverlayHelp {
 		maxOff := m.helpMaxOffset()

@@ -219,14 +219,12 @@ func (m Model) renderRow(r row, selected bool, width int) string {
 		// space.
 		return clipLine(indent+theme.Normal.Render(r.conn.Name), width, selected)
 	case rowDatabase:
-		// Databases: dim hex + engine badge next to the name so
-		// `pg` / `my` / `rd` / `sq` reads at a glance.
-		head := theme.Hint.Render("⬢ ")
-		badge := theme.AccentDim
-		_ = badge
+		// Databases: plain name + a dim engine badge next to it so
+		// `pg` / `my` / `rd` / `sq` reads at a glance. No glyph
+		// prefix — same treatment as connections.
 		eng := engineBadge(r.db.Engine)
 		body := theme.Normal.Render(r.db.Name) + " " + theme.Hint.Render(eng)
-		return clipLine(indent+head+body, width, selected)
+		return clipLine(indent+body, width, selected)
 	}
 	return ""
 }
