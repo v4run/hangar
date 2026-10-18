@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/v4run/hangar/v2/internal/config"
+	sshauth "github.com/v4run/hangar/v2/internal/ssh"
 	"github.com/v4run/hangar/v2/internal/tui/theme"
 )
 
@@ -412,8 +414,6 @@ func (m Model) renderDetailsTab(w int) string {
 	}
 	var b strings.Builder
 	b.WriteString(theme.Title.Render(c.Name))
-	b.WriteString("\n")
-	b.WriteString(theme.Dim.Render(fmt.Sprintf("  ssh %s", formatSSHHint(m.cfg, r))))
 	b.WriteString("\n\n")
 	write := func(s string) {
 		if s != "" {
@@ -439,7 +439,57 @@ func (m Model) renderDetailsTab(w int) string {
 	if r.RemoteCommand != "" {
 		write(line("RemoteCmd", r.RemoteCommand, config.ScopeOwn, ""))
 	}
+	// Env vars (merged from own + ancestor groups via Resolve).
+	if len(r.Env) > 0 {
+		keys := make([]string, 0, len(r.Env))
+		for k := range r.Env {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		b.WriteString("\n")
+		b.WriteString(theme.Label.Render("  Env"))
+		b.WriteString("\n")
+		for _, k := range keys {
+			fmt.Fprintf(&b, "    %s=%s\n", theme.Dim.Render(k), theme.Normal.Render(r.Env[k]))
+		}
+	}
+	// Full ssh invocation (what tea.ExecProcess will actually run).
+	b.WriteString("\n")
+	b.WriteString(theme.Label.Render("  SSH command"))
+	b.WriteString("\n")
+	for _, l := range wrapCmd("ssh "+strings.Join(sshauth.BuildArgs(m.cfg, r), " "), w-6) {
+		b.WriteString("    ")
+		b.WriteString(theme.Dim.Render(l))
+		b.WriteString("\n")
+	}
 	return b.String()
+}
+
+// wrapCmd folds a long shell command string onto multiple lines at
+// whitespace boundaries, each ≤ max cells wide.
+func wrapCmd(s string, max int) []string {
+	if max < 20 {
+		max = 20
+	}
+	fields := strings.Fields(s)
+	var out []string
+	cur := ""
+	for _, f := range fields {
+		if cur == "" {
+			cur = f
+			continue
+		}
+		if len(cur)+1+len(f) > max {
+			out = append(out, cur)
+			cur = "  " + f // continuation indent
+			continue
+		}
+		cur += " " + f
+	}
+	if cur != "" {
+		out = append(out, cur)
+	}
+	return out
 }
 
 func (m Model) renderGroupDetails(g *config.Group) string {

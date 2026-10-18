@@ -240,11 +240,12 @@ const (
 	connFieldTags
 	connFieldPassword
 	connFieldRemoteCmd
+	connFieldEnv
 	connFieldCount
 )
 
 var connFieldLabels = []string{
-	"Name", "Host", "Port", "User", "Key", "Group", "Tags", "Pass", "RemoteCmd",
+	"Name", "Host", "Port", "User", "Key", "Group", "Tags", "Pass", "RemoteCmd", "Env",
 }
 var connFieldHints = []string{
 	"required, display name",
@@ -256,6 +257,7 @@ var connFieldHints = []string{
 	"comma-separated",
 	"stored in keychain; or $(cmd)",
 	"run on remote after connect",
+	"KEY=value, OTHER=val",
 }
 
 func (m *Model) openAddConnectionPalette() tea.Cmd {
@@ -303,6 +305,9 @@ func (m *Model) openConnectionPalette(kind PaletteKind, title string, c *config.
 			fields[connFieldPassword].input.SetValue(pw)
 		}
 		fields[connFieldRemoteCmd].input.SetValue(c.RemoteCommand)
+		if len(c.Env) > 0 {
+			fields[connFieldEnv].input.SetValue(envMapToString(c.Env))
+		}
 	}
 	for i := range fields {
 		fields[i].input.CursorEnd()
@@ -342,11 +347,12 @@ const (
 	groupFieldLocalFwd
 	groupFieldRemoteFwd
 	groupFieldTags
+	groupFieldEnv
 	groupFieldCount
 )
 
 var groupFieldLabels = []string{
-	"Path", "User", "Key", "Jump", "FwdAgent", "Compress", "LocalFwd", "RemoteFwd", "Tags",
+	"Path", "User", "Key", "Jump", "FwdAgent", "Compress", "LocalFwd", "RemoteFwd", "Tags", "Env",
 }
 var groupFieldHints = []string{
 	"slash-separated for nesting (prod/us-east)",
@@ -358,6 +364,7 @@ var groupFieldHints = []string{
 	"8080:localhost:80, 9090:localhost:90",
 	"3000:localhost:3000",
 	"",
+	"KEY=value, OTHER=val",
 }
 
 func (m *Model) openAddGroupPalette() tea.Cmd {
@@ -428,6 +435,9 @@ func (m *Model) openGroupPalette(kind PaletteKind, title string, g *config.Group
 			fields[groupFieldRemoteFwd].input.SetValue(strings.Join(g.SSHOptions.RemoteForward, ", "))
 		}
 		initialTags = append([]string(nil), g.Tags...)
+		if len(g.Env) > 0 {
+			fields[groupFieldEnv].input.SetValue(envMapToString(g.Env))
+		}
 	}
 	for i := range fields {
 		fields[i].input.CursorEnd()
@@ -1450,6 +1460,7 @@ func (m *Model) saveConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 		Tags:          tags,
 		RemoteCommand: rc,
 		SSHOptions:    m.paletteOpts,
+		Env:           parseEnvMap(m.palette.fields[connFieldEnv].input.Value()),
 	}
 	if sshauth.IsCommandValue(password) {
 		conn.Password = password
@@ -1588,6 +1599,7 @@ func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 			g.SSHOptions = nil
 		}
 		g.Tags = m.paletteTags.Values()
+		g.Env = parseEnvMap(m.palette.fields[groupFieldEnv].input.Value())
 		break
 	}
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
@@ -1641,6 +1653,55 @@ func (m *Model) resolveOrCreateGroupPath(path string) (uuid.UUID, error) {
 		parent = found
 	}
 	return parent, nil
+}
+
+// envMapToString serialises an Env map as a stable "KEY=value, …"
+// string so the palette input shows the existing entries in a
+// deterministic order.
+func envMapToString(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	// Alpha sort — stable, matches detail-tab display order.
+	for i := 1; i < len(keys); i++ {
+		for j := i; j > 0 && keys[j-1] > keys[j]; j-- {
+			keys[j-1], keys[j] = keys[j], keys[j-1]
+		}
+	}
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+m[k])
+	}
+	return strings.Join(parts, ", ")
+}
+
+// parseEnvMap takes "KEY=value, OTHER=val" and returns the map, or
+// nil for empty input.
+func parseEnvMap(s string) map[string]string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	out := map[string]string{}
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func splitAndTrim(s, sep string) []string {
