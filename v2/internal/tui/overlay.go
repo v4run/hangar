@@ -4,18 +4,25 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/v4run/hangar/v2/internal/tui/theme"
 )
 
 // overlayOn paints `overlay` centered on top of `base`, with the
 // base's visible region dimmed. Unlike lipgloss.Place, which simply
-// outputs the overlay against whitespace, this walks `base` line-by-
-// line, dims each rune to the muted color, and splices the overlay
-// into the middle. The result reads as "that dialog is in front of
-// something" rather than "that dialog replaced the screen."
+// outputs the overlay against whitespace, this walks `base` line-
+// by-line, strips its ANSI styling to prevent escape-sequence
+// bleeding, re-dyes the plain text in the muted color, and splices
+// the overlay into the middle. The overlay keeps its own styling
+// because it's rendered on top.
 func overlayOn(base, overlay string, width, height int) string {
-	baseLines := padLines(strings.Split(base, "\n"), width, height)
+	// Strip ANSI from base once — otherwise slicing by cell count
+	// can split an escape mid-sequence and leak `\x1b[38;…` into
+	// the user's terminal, which is exactly the garbage you'd see
+	// behind a modal.
+	plain := ansi.Strip(base)
+	baseLines := padLines(strings.Split(plain, "\n"), width, height)
 	ovLines := strings.Split(strings.TrimRight(overlay, "\n"), "\n")
 	ovH := len(ovLines)
 	ovW := 0
@@ -43,10 +50,8 @@ func overlayOn(base, overlay string, width, height int) string {
 	for i, line := range baseLines {
 		if i >= top && i < top+ovH {
 			ov := ovLines[i-top]
-			// Dim the portion of the base to the left of the overlay,
-			// splice the overlay, then dim the right remainder.
-			leftSeg := truncateExact(line, left)
-			rightSeg := trimLeftWidth(line, left+ovW)
+			leftSeg := truncatePlain(line, left)
+			rightSeg := trimLeftPlain(line, left+ovW)
 			out[i] = dim.Render(leftSeg) + ov + dim.Render(rightSeg)
 		} else {
 			out[i] = dim.Render(line)
@@ -71,32 +76,35 @@ func padLines(lines []string, width, height int) []string {
 	return lines
 }
 
-// truncateExact returns the first `w` display cells of s. ANSI escape
-// sequences inside s pass through unchanged.
-func truncateExact(s string, w int) string {
+// truncatePlain keeps the first `w` display cells of a plain
+// (ANSI-free) string. Caller must have stripped escapes first.
+func truncatePlain(s string, w int) string {
 	if w <= 0 {
 		return ""
 	}
-	if lipgloss.Width(s) <= w {
-		return s
-	}
-	// Drop runes from the end until we fit.
 	runes := []rune(s)
-	for len(runes) > 0 && lipgloss.Width(string(runes)) > w {
-		runes = runes[:len(runes)-1]
+	acc := 0
+	for i := 0; i < len(runes); i++ {
+		cw := lipgloss.Width(string(runes[i]))
+		if acc+cw > w {
+			return string(runes[:i])
+		}
+		acc += cw
 	}
-	return string(runes)
+	return s
 }
 
-// trimLeftWidth drops the first `w` display cells and returns the rest.
-func trimLeftWidth(s string, w int) string {
+// trimLeftPlain drops the first `w` display cells of a plain
+// (ANSI-free) string and returns the rest.
+func trimLeftPlain(s string, w int) string {
 	runes := []rune(s)
 	acc := 0
 	for i, r := range runes {
-		acc += lipgloss.Width(string(r))
-		if acc > w {
+		cw := lipgloss.Width(string(r))
+		if acc+cw > w {
 			return string(runes[i:])
 		}
+		acc += cw
 	}
 	return ""
 }

@@ -75,3 +75,52 @@ func TestRenderWideTerminal(t *testing.T) {
 	m2, _ := m.Update(tea.WindowSizeMsg{Width: 240, Height: 60})
 	_ = m2.(Model).View()
 }
+
+// TestOverlayDoesNotLeakEscapes guards against the "escape codes
+// visible around the modal" bug: when overlayOn dims the base it
+// MUST strip ANSI first or slicing can split a `\x1b[…m` mid-
+// sequence and emit `[38;5;…` as plain text. We open the leader
+// overlay and look for the signature leaked prefix.
+func TestOverlayDoesNotLeakEscapes(t *testing.T) {
+	cfg := &config.Config{Schema: config.SchemaVersion}
+	m := New(cfg, t.TempDir())
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	out := m3.(Model).View()
+	// A broken-escape leak looks like a literal `[38;` or `[0m` with
+	// no ESC byte preceding it. Strip all legit escapes first; if
+	// the remaining plain-text output still contains `[38;` or `[0m`
+	// we leaked.
+	// (We use a cheap substring check — the exact escape forms
+	//  used by lipgloss both start with `[` after the ESC byte.)
+	stripped := stripEscForTest(out)
+	for _, needle := range []string{"[38;", "[48;", "[0m", "[1m"} {
+		if strings.Contains(stripped, needle) {
+			t.Fatalf("overlay leaked escape fragment %q into visible text:\n%s", needle, out)
+		}
+	}
+}
+
+// stripEscForTest removes CSI sequences. We do it inline (rather
+// than depending on ansi.Strip) so the test fails even if the
+// stripping library is the thing with the bug.
+func stripEscForTest(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
+			j := i + 2
+			for j < len(s) {
+				c := s[j]
+				if c >= 0x40 && c <= 0x7e {
+					j++
+					break
+				}
+				j++
+			}
+			i = j - 1
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
