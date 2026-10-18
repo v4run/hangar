@@ -670,45 +670,79 @@ func (m Model) renderPicker() string {
 	b.WriteString(m.picker.query.View())
 	b.WriteString("\n\n")
 
+	// Overall box width. Picker lives centered, bordered twice (outer
+	// paddedBox + inner lists), so leave some slack on each side.
 	width := minInt(80, m.width-10)
+	if width < 40 {
+		width = minInt(m.width-4, 40)
+	}
 	listW := width/2 - 2
 	previewW := width - listW - 3
 
-	// List
-	var listB strings.Builder
-	visible := minInt(10, len(m.picker.matches))
+	// Fixed minimum height so an empty result or a single match
+	// doesn't collapse the box.
+	const minRows = 6
+	rows := len(m.picker.matches)
+	visible := rows
+	if visible < minRows {
+		visible = minRows
+	}
+	if visible > 10 {
+		visible = 10
+	}
+
+	// Scroll window.
 	start := 0
-	if m.picker.cursor >= visible {
-		start = m.picker.cursor - visible + 1
+	windowSize := visible
+	if windowSize > rows {
+		windowSize = rows
 	}
-	end := start + visible
-	if end > len(m.picker.matches) {
-		end = len(m.picker.matches)
+	if m.picker.cursor >= windowSize {
+		start = m.picker.cursor - windowSize + 1
 	}
+	end := start + windowSize
+	if end > rows {
+		end = rows
+	}
+
+	var listB strings.Builder
+	rowSelected := lipgloss.NewStyle().Foreground(theme.Accent).Bold(true)
 	for i := start; i < end; i++ {
 		it := m.picker.items[m.picker.matches[i]]
-		line := it.Title()
-		if sub := it.Subtitle(); sub != "" {
-			line += theme.Dim.Render("  " + sub)
-		}
-		line = truncate(line, listW)
+		title := it.Title()
+		sub := it.Subtitle()
+		marker := "  "
 		if i == m.picker.cursor {
-			line = theme.Selected.Render("› " + line)
+			marker = rowSelected.Render("› ")
+			title = rowSelected.Render(title)
 		} else {
-			line = "  " + theme.Normal.Render(line)
+			title = theme.Normal.Render(title)
 		}
-		listB.WriteString(line)
+		line := marker + title
+		if sub != "" {
+			line += "  " + theme.Dim.Render(sub)
+		}
+		listB.WriteString(truncate(line, listW))
 		listB.WriteString("\n")
 	}
-	// Preview
+	if rows == 0 {
+		listB.WriteString(theme.Dim.Render("  (no matches)"))
+		listB.WriteString("\n")
+	}
+
+	// Preview on the right.
 	var prev string
 	if sel := m.pickerSelected(); sel != nil {
 		prev = sel.Preview()
+	} else {
+		prev = theme.Dim.Render("  (nothing to preview)")
 	}
 	previewBox := theme.Pane.Width(previewW).Height(visible).Render(prev)
 	listBox := lipgloss.NewStyle().Width(listW).Height(visible).Render(listB.String())
 	row := lipgloss.JoinHorizontal(lipgloss.Top, listBox, previewBox)
 	b.WriteString(row)
+	b.WriteString("\n")
+	b.WriteString(theme.Dim.Render("  ↑/↓: pick   enter: select   esc: cancel"))
 	return paddedBox(b.String(), width)
 }
 
