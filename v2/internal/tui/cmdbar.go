@@ -60,11 +60,11 @@ func (m *Model) handleCmdBarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.closeCmdBar()
-		return m, nil
+		return *m, nil
 	case "enter":
 		name := strings.TrimSpace(m.cmdInput.Value())
 		m.closeCmdBar()
-		return m, m.runCommand(name)
+		return *m, m.runCommand(name)
 	case "tab":
 		// Auto-complete to the first matching command.
 		q := strings.TrimSpace(m.cmdInput.Value())
@@ -75,11 +75,11 @@ func (m *Model) handleCmdBarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		return m, nil
+		return *m, nil
 	}
 	var cmd tea.Cmd
 	m.cmdInput, cmd = m.cmdInput.Update(msg)
-	return m, cmd
+	return *m, cmd
 }
 
 func (m *Model) runCommand(input string) tea.Cmd {

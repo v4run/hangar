@@ -83,41 +83,41 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc", "n", "N":
 			m.closePalette()
-			return m, nil
+			return *m, nil
 		case "y", "Y", "ctrl+s":
 			return m.submitPalette()
 		}
-		return m, nil
+		return *m, nil
 	case PaletteHostKey:
 		switch msg.String() {
 		case "esc", "n", "N":
 			m.closePalette()
 			m.pendingConn = nil
 			m.pendingKeys = nil
-			return m, nil
+			return *m, nil
 		case "y", "Y", "enter":
 			if len(m.pendingKeys) == 0 {
-				return m, nil // still scanning
+				return *m, nil // still scanning
 			}
 			return m.confirmHostKey()
 		}
-		return m, nil
+		return *m, nil
 	case PaletteConfirmConnect:
 		switch msg.String() {
 		case "esc", "n", "N":
 			m.closePalette()
-			return m, nil
+			return *m, nil
 		case "y", "Y", "enter":
 			return m.confirmConnect()
 		}
-		return m, nil
+		return *m, nil
 	}
 
 	// Shared chrome.
 	switch msg.String() {
 	case "esc":
 		m.closePalette()
-		return m, nil
+		return *m, nil
 	case "ctrl+s":
 		return m.submitPalette()
 	}
@@ -126,35 +126,35 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.paletteUseTA {
 		var cmd tea.Cmd
 		m.paletteTextarea, cmd = m.paletteTextarea.Update(msg)
-		return m, cmd
+		return *m, cmd
 	}
 
 	// Field grid palettes.
 	if len(m.palette.fields) == 0 {
-		return m, nil
+		return *m, nil
 	}
 	switch msg.String() {
 	case "tab":
-		return m, m.nextField()
+		return *m, m.nextField()
 	case "shift+tab":
-		return m, m.prevField()
+		return *m, m.prevField()
 	case "enter":
 		// Enter on the last field saves; otherwise advances.
 		if m.palette.focus == len(m.palette.fields)-1 {
 			return m.submitPalette()
 		}
-		return m, m.nextField()
+		return *m, m.nextField()
 	}
 
 	// Tag-chip editor owns its field when active.
 	if m.paletteUseTags && m.palette.focus == m.palette.tagFieldIdx {
 		cmd, _ := m.paletteTags.Update(msg)
-		return m, cmd
+		return *m, cmd
 	}
 
 	var cmd tea.Cmd
 	m.palette.fields[m.palette.focus].input, cmd = m.palette.fields[m.palette.focus].input.Update(msg)
-	return m, cmd
+	return *m, cmd
 }
 
 // --- connection form ---
@@ -392,7 +392,7 @@ func (m *Model) submitPalette() (tea.Model, tea.Cmd) {
 	case PaletteDeleteForward:
 		return m.deleteForward()
 	}
-	return m, nil
+	return *m, nil
 }
 
 func (m *Model) openDeleteScriptPalette(c *config.Connection, idx int) tea.Cmd {
@@ -421,23 +421,23 @@ func (m *Model) deleteScript() (tea.Model, tea.Cmd) {
 		c := &m.cfg.Connections[i]
 		if idx < 0 || idx >= len(c.Scripts) {
 			m.closePalette()
-			return m, nil
+			return *m, nil
 		}
 		name := c.Scripts[idx].Name
 		c.Scripts = append(c.Scripts[:idx], c.Scripts[idx+1:]...)
 		if err := config.Save(m.cfgDir, m.cfg); err != nil {
 			m.palette.err = err.Error()
-			return m, nil
+			return *m, nil
 		}
 		m.closePalette()
 		if m.scriptCursor >= len(c.Scripts) && m.scriptCursor > 0 {
 			m.scriptCursor--
 		}
 		m.setToast("deleted script "+name, toastOK)
-		return m, nil
+		return *m, nil
 	}
 	m.closePalette()
-	return m, nil
+	return *m, nil
 }
 
 func (m *Model) openDeleteForwardPalette(c *config.Connection, dir string, idx int) tea.Cmd {
@@ -476,7 +476,7 @@ func (m *Model) deleteForward() (tea.Model, tea.Cmd) {
 		c := &m.cfg.Connections[i]
 		if c.SSHOptions == nil {
 			m.closePalette()
-			return m, nil
+			return *m, nil
 		}
 		idx := m.paletteForwardIdx
 		if m.paletteForwardDir == "L" {
@@ -490,14 +490,14 @@ func (m *Model) deleteForward() (tea.Model, tea.Cmd) {
 		}
 		if err := config.Save(m.cfgDir, m.cfg); err != nil {
 			m.palette.err = err.Error()
-			return m, nil
+			return *m, nil
 		}
 		m.closePalette()
 		m.setToast("forward removed", toastOK)
-		return m, nil
+		return *m, nil
 	}
 	m.closePalette()
-	return m, nil
+	return *m, nil
 }
 
 // --- port forward add ---
@@ -528,11 +528,11 @@ func (m *Model) saveForward() (tea.Model, tea.Cmd) {
 	spec := strings.TrimSpace(m.palette.fields[1].input.Value())
 	if dir != "L" && dir != "R" {
 		m.palette.err = "direction must be L or R"
-		return m, nil
+		return *m, nil
 	}
 	if spec == "" {
 		m.palette.err = "spec is required"
-		return m, nil
+		return *m, nil
 	}
 	for i := range m.cfg.Connections {
 		if m.cfg.Connections[i].ID != m.palette.target {
@@ -551,11 +551,11 @@ func (m *Model) saveForward() (tea.Model, tea.Cmd) {
 	}
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 	m.closePalette()
 	m.setToast("forward added", toastOK)
-	return m, nil
+	return *m, nil
 }
 
 func (m *Model) openDeleteGroupPalette(g *config.Group) tea.Cmd {
@@ -616,16 +616,16 @@ func (m *Model) deleteGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 			m.cfg.Groups = append(m.cfg.Groups[:i], m.cfg.Groups[i+1:]...)
 			if err := config.Save(m.cfgDir, m.cfg); err != nil {
 				m.palette.err = err.Error()
-				return m, nil
+				return *m, nil
 			}
 			m.rebuildRows()
 			m.closePalette()
 			m.setToast("deleted group "+name, toastOK)
-			return m, nil
+			return *m, nil
 		}
 	}
 	m.closePalette()
-	return m, nil
+	return *m, nil
 }
 
 // --- shell init multi-line editor ---
@@ -690,11 +690,11 @@ func (m *Model) saveShellInit() (tea.Model, tea.Cmd) {
 	}
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 	m.closePalette()
 	m.setToast("shell init saved", toastOK)
-	return m, nil
+	return *m, nil
 }
 
 // --- SSH command import ---
@@ -717,12 +717,12 @@ func (m *Model) submitImportSSH() (tea.Model, tea.Cmd) {
 	raw := strings.TrimSpace(m.palette.fields[0].input.Value())
 	if raw == "" {
 		m.palette.err = "paste an ssh command first"
-		return m, nil
+		return *m, nil
 	}
 	res, err := sshauth.ParseSSHCommand(raw)
 	if err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 	// Switch to the add-connection palette prefilled from the parse.
 	m.closePalette()
@@ -747,7 +747,7 @@ func (m *Model) submitImportSSH() (tea.Model, tea.Cmd) {
 	for i := range m.palette.fields {
 		m.palette.fields[i].input.CursorEnd()
 	}
-	return m, cmd
+	return *m, cmd
 }
 
 // --- notes ---
@@ -778,11 +778,11 @@ func (m *Model) submitNotes() (tea.Model, tea.Cmd) {
 	}
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 	m.closePalette()
 	m.setToast("notes saved", toastOK)
-	return m, nil
+	return *m, nil
 }
 
 // --- scripts ---
@@ -833,7 +833,7 @@ func (m *Model) submitScript() (tea.Model, tea.Cmd) {
 	cmd := strings.TrimSpace(m.palette.fields[1].input.Value())
 	if name == "" || cmd == "" {
 		m.palette.err = "name and command are required"
-		return m, nil
+		return *m, nil
 	}
 	for i := range m.cfg.Connections {
 		if m.cfg.Connections[i].ID != m.palette.target {
@@ -849,11 +849,11 @@ func (m *Model) submitScript() (tea.Model, tea.Cmd) {
 	}
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 	m.closePalette()
 	m.setToast("script saved", toastOK)
-	return m, nil
+	return *m, nil
 }
 
 // --- databases ---
@@ -944,20 +944,20 @@ func (m *Model) saveDatabase(id uuid.UUID) (tea.Model, tea.Cmd) {
 	name := strings.TrimSpace(m.palette.fields[dbFieldName].input.Value())
 	if name == "" {
 		m.palette.err = "name is required"
-		return m, nil
+		return *m, nil
 	}
 	switch engine {
 	case "postgres", "mysql", "redis", "sqlite":
 	default:
 		m.palette.err = "engine must be postgres, mysql, redis, or sqlite"
-		return m, nil
+		return *m, nil
 	}
 	port := 0
 	if ps := strings.TrimSpace(m.palette.fields[dbFieldPort].input.Value()); ps != "" {
 		n, err := strconv.Atoi(ps)
 		if err != nil {
 			m.palette.err = "port must be an integer"
-			return m, nil
+			return *m, nil
 		}
 		port = n
 	}
@@ -965,7 +965,7 @@ func (m *Model) saveDatabase(id uuid.UUID) (tea.Model, tea.Cmd) {
 	gID, err := m.resolveOrCreateGroupPath(gpath)
 	if err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 	password := strings.TrimSpace(m.palette.fields[dbFieldPassword].input.Value())
 	d := config.Database{
@@ -997,12 +997,12 @@ func (m *Model) saveDatabase(id uuid.UUID) (tea.Model, tea.Cmd) {
 	}
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 	m.rebuildRows()
 	m.closePalette()
 	m.setToast("saved "+d.Name, toastOK)
-	return m, nil
+	return *m, nil
 }
 
 func (m *Model) deleteDatabase(id uuid.UUID) (tea.Model, tea.Cmd) {
@@ -1013,16 +1013,16 @@ func (m *Model) deleteDatabase(id uuid.UUID) (tea.Model, tea.Cmd) {
 			_ = sshauth.DeletePassword(id.String())
 			if err := config.Save(m.cfgDir, m.cfg); err != nil {
 				m.palette.err = err.Error()
-				return m, nil
+				return *m, nil
 			}
 			m.rebuildRows()
 			m.closePalette()
 			m.setToast("deleted "+name, toastOK)
-			return m, nil
+			return *m, nil
 		}
 	}
 	m.closePalette()
-	return m, nil
+	return *m, nil
 }
 
 func (m *Model) saveConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
@@ -1030,14 +1030,14 @@ func (m *Model) saveConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 	host := strings.TrimSpace(m.palette.fields[connFieldHost].input.Value())
 	if name == "" || host == "" {
 		m.palette.err = "name and host are required"
-		return m, nil
+		return *m, nil
 	}
 	port := 0
 	if ps := strings.TrimSpace(m.palette.fields[connFieldPort].input.Value()); ps != "" {
 		n, err := strconv.Atoi(ps)
 		if err != nil {
 			m.palette.err = "port must be an integer"
-			return m, nil
+			return *m, nil
 		}
 		port = n
 	}
@@ -1045,7 +1045,7 @@ func (m *Model) saveConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 	gID, err := m.resolveOrCreateGroupPath(gpath)
 	if err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 
 	tags := m.paletteTags.Values()
@@ -1092,13 +1092,13 @@ func (m *Model) saveConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 	}
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
 		m.palette.err = "save: " + err.Error()
-		return m, nil
+		return *m, nil
 	}
 	m.rebuildRows()
 	m.cursorToConnection(conn.ID)
 	m.closePalette()
 	m.setToast("saved "+conn.Name, toastOK)
-	return m, nil
+	return *m, nil
 }
 
 func (m *Model) deleteConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
@@ -1109,28 +1109,28 @@ func (m *Model) deleteConnection(id uuid.UUID) (tea.Model, tea.Cmd) {
 			_ = sshauth.DeletePassword(id.String())
 			if err := config.Save(m.cfgDir, m.cfg); err != nil {
 				m.palette.err = err.Error()
-				return m, nil
+				return *m, nil
 			}
 			m.rebuildRows()
 			m.closePalette()
 			m.setToast("deleted "+name, toastOK)
-			return m, nil
+			return *m, nil
 		}
 	}
 	m.closePalette()
-	return m, nil
+	return *m, nil
 }
 
 func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 	path := strings.TrimSpace(m.palette.fields[groupFieldPath].input.Value())
 	if path == "" {
 		m.palette.err = "path is required"
-		return m, nil
+		return *m, nil
 	}
 	gID, err := m.resolveOrCreateGroupPath(path)
 	if err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 	// If editing an existing group whose path has moved, transfer its
 	// contents (child groups, connections, databases) to the new UUID
@@ -1174,7 +1174,7 @@ func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 			g.JumpHost = j.ID
 		} else {
 			m.palette.err = "unknown jump-host connection: " + jumpName
-			return m, nil
+			return *m, nil
 		}
 		opts := &config.SSHOptions{}
 		touched := false
@@ -1204,13 +1204,13 @@ func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 	}
 	if err := config.Save(m.cfgDir, m.cfg); err != nil {
 		m.palette.err = err.Error()
-		return m, nil
+		return *m, nil
 	}
 	m.rebuildRows()
 	m.cursorToGroup(gID)
 	m.closePalette()
 	m.setToast("saved group "+path, toastOK)
-	return m, nil
+	return *m, nil
 }
 
 // connectionByName looks up a connection by its display name.

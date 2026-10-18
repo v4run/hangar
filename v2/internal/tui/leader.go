@@ -100,39 +100,39 @@ func (m *Model) handleLeaderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.closeLeader()
-		return m, nil
+		return *m, nil
 	case "down":
 		if m.leaderOffset < maxOff {
 			m.leaderOffset++
 		}
-		return m, nil
+		return *m, nil
 	case "up":
 		if m.leaderOffset > 0 {
 			m.leaderOffset--
 		}
-		return m, nil
+		return *m, nil
 	case "pgdown", "ctrl+d":
 		m.leaderOffset += 10
 		if m.leaderOffset > maxOff {
 			m.leaderOffset = maxOff
 		}
-		return m, nil
+		return *m, nil
 	case "pgup", "ctrl+u":
 		m.leaderOffset -= 10
 		if m.leaderOffset < 0 {
 			m.leaderOffset = 0
 		}
-		return m, nil
+		return *m, nil
 	}
 	s := msg.String()
 	for _, b := range m.leaderBindings() {
 		if b.Key == s {
 			m.closeLeader()
-			return m, b.Run(m)
+			return *m, b.Run(m)
 		}
 	}
 	// Unrecognised key — close overlay and let the main handler see
 	// the next keystroke fresh.
 	m.closeLeader()
-	return m, nil
+	return *m, nil
 }

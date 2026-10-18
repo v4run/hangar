@@ -83,28 +83,28 @@ func (m *Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.closePicker()
-		return m, nil
+		return *m, nil
 	case "enter":
 		it := m.pickerSelected()
 		onSel := m.picker.onSelect
 		m.closePicker()
 		if it != nil && onSel != nil {
-			return m, onSel(it)
+			return *m, onSel(it)
 		}
-		return m, nil
+		return *m, nil
 	case "up", "ctrl+p", "ctrl+k":
 		if m.picker.cursor > 0 {
 			m.picker.cursor--
 		}
-		return m, nil
+		return *m, nil
 	case "down", "ctrl+n", "ctrl+j":
 		if m.picker.cursor < len(m.picker.matches)-1 {
 			m.picker.cursor++
 		}
-		return m, nil
+		return *m, nil
 	}
 	var cmd tea.Cmd
 	m.picker.query, cmd = m.picker.query.Update(msg)
 	m.pickerRefilter()
-	return m, cmd
+	return *m, cmd
 }

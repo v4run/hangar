@@ -57,17 +57,17 @@ func (m *Model) confirmHostKey() (tea.Model, tea.Cmd) {
 		m.closePalette()
 		m.pendingConn = nil
 		m.pendingKeys = nil
-		return m, nil
+		return *m, nil
 	}
 	c := m.pendingConn
 	m.closePalette()
 	m.pendingConn = nil
 	m.pendingKeys = nil
 	if c == nil {
-		return m, nil
+		return *m, nil
 	}
 	resolved := config.Resolve(m.cfg, c)
-	return m, m.launchSSH(resolved)
+	return *m, m.launchSSH(resolved)
 }
 
 func (m *Model) launchSSH(r *config.Resolved) tea.Cmd {
@@ -87,9 +87,9 @@ func (m *Model) confirmConnect() (tea.Model, tea.Cmd) {
 	m.closePalette()
 	m.pendingConn = nil
 	if c == nil {
-		return m, nil
+		return *m, nil
 	}
-	return m, m.beginConnect(c)
+	return *m, m.beginConnect(c)
 }
 
 func portOr22(p int) int {
