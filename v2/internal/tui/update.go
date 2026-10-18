@@ -17,6 +17,17 @@ import (
 
 var textinputBlink = textinput.Blink
 
+// restoreMouseCmd returns the right mouse-mode command to run after
+// an ExecProcess (ssh / $EDITOR) suspends mouse tracking. Honours
+// the persisted preference — if the user turned mouse off with M,
+// we leave it off on resume.
+func (m Model) restoreMouseCmd() tea.Cmd {
+	if m.mouseEnabled {
+		return tea.EnableMouseCellMotion
+	}
+	return nil
+}
+
 func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -110,10 +121,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeBrowse
 		if msg.err != nil {
 			m.setToast("editor: "+msg.err.Error(), toastErr)
-			return m, tea.Batch(tea.ClearScreen, tea.EnableMouseCellMotion, m.clearToastCmd())
+			return m, tea.Batch(tea.ClearScreen, m.restoreMouseCmd(), m.clearToastCmd())
 		}
 		m.applyShellInitEditorResult(msg)
-		return m, tea.Batch(tea.ClearScreen, tea.EnableMouseCellMotion, m.clearToastCmd())
+		return m, tea.Batch(tea.ClearScreen, m.restoreMouseCmd(), m.clearToastCmd())
 	case hostKeyScannedMsg:
 		m.spinning = false
 		if msg.err != nil {
@@ -135,7 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tea.ClearScreen wipes anything ssh/db clients wrote to the
 		// normal screen before alt-screen was re-entered — otherwise
 		// the TUI can render one row down and scroll the header off.
-		return m, tea.Batch(tea.ClearScreen, tea.EnableMouseCellMotion, m.clearToastCmd())
+		return m, tea.Batch(tea.ClearScreen, m.restoreMouseCmd(), m.clearToastCmd())
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case tea.MouseMsg:
@@ -558,6 +569,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.clearToastCmd()
 	case key.Matches(msg, m.keymap.MouseToggle):
 		m.mouseEnabled = !m.mouseEnabled
+		m.persistMouse()
 		var cmd tea.Cmd
 		if m.mouseEnabled {
 			cmd = tea.EnableMouseCellMotion

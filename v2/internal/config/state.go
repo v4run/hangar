@@ -28,6 +28,10 @@ type State struct {
 	// RecentCollapsed persists the frecency section's open/closed
 	// state, same spirit.
 	RecentCollapsed bool `json:"recent_collapsed,omitempty"`
+	// MouseDisabled remembers the user's `M` toggle. Pointer so a
+	// missing value in state.json means "default = enabled" rather
+	// than "explicitly disabled".
+	MouseDisabled *bool `json:"mouse_disabled,omitempty"`
 }
 
 // Usage is one row of the Usage map.

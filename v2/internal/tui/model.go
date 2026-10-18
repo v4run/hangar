@@ -243,6 +243,10 @@ func New(cfg *config.Config, cfgDir string) Model {
 	for _, id := range st.CollapsedGroups {
 		collapsed[id] = true
 	}
+	mouseEnabled := true
+	if st.MouseDisabled != nil && *st.MouseDisabled {
+		mouseEnabled = false
+	}
 	m := Model{
 		cfg:             cfg,
 		cfgDir:          cfgDir,
@@ -254,12 +258,19 @@ func New(cfg *config.Config, cfgDir string) Model {
 		filter:          fi,
 		spinner:         sp,
 		state:           st,
-		mouseEnabled:    true,
+		mouseEnabled:    mouseEnabled,
 		cutRows:         map[uuid.UUID]bool{},
 		copyRows:        map[uuid.UUID]bool{},
 	}
 	m.rebuildRows()
 	return m
+}
+
+// persistMouse writes the current mouse-enabled flag to state.json.
+func (m *Model) persistMouse() {
+	disabled := !m.mouseEnabled
+	m.state.MouseDisabled = &disabled
+	_ = config.SaveState(m.cfgDir, m.state)
 }
 
 // persistCollapsed writes the current fold layout to state.json.
@@ -276,7 +287,13 @@ func (m *Model) persistCollapsed() {
 	_ = config.SaveState(m.cfgDir, m.state)
 }
 
-// Init satisfies tea.Model.
+// Init satisfies tea.Model. If the persisted mouse state was
+// disabled, emit tea.DisableMouse up front so the program starts
+// in that mode (the Program was launched with tea.WithMouseCellMotion
+// in main.go to keep the "default on" fast path).
 func (m Model) Init() tea.Cmd {
+	if !m.mouseEnabled {
+		return tea.Batch(textinput.Blink, tea.DisableMouse)
+	}
 	return textinput.Blink
 }
