@@ -705,8 +705,12 @@ func (m Model) renderPicker() string {
 		end = rows
 	}
 
-	var listB strings.Builder
+	// Build the list column line-by-line, padded to listW cells. We
+	// avoid lipgloss.Style.Width/Height on ANSI-containing content —
+	// it was producing a blank box with the row rendering above it
+	// instead of inside.
 	rowSelected := lipgloss.NewStyle().Foreground(theme.Accent).Bold(true)
+	listLines := make([]string, 0, visible)
 	for i := start; i < end; i++ {
 		it := m.picker.items[m.picker.matches[i]]
 		title := it.Title()
@@ -722,28 +726,56 @@ func (m Model) renderPicker() string {
 		if sub != "" {
 			line += "  " + theme.Dim.Render(sub)
 		}
-		listB.WriteString(truncate(line, listW))
-		listB.WriteString("\n")
+		line = truncate(line, listW)
+		listLines = append(listLines, padRight(line, listW))
 	}
 	if rows == 0 {
-		listB.WriteString(theme.Dim.Render("  (no matches)"))
-		listB.WriteString("\n")
+		listLines = append(listLines, padRight(theme.Dim.Render("  (no matches)"), listW))
+	}
+	for len(listLines) < visible {
+		listLines = append(listLines, strings.Repeat(" ", listW))
 	}
 
-	// Preview on the right.
+	// Preview column — build the same way so the two columns stay
+	// aligned regardless of ANSI content.
 	var prev string
 	if sel := m.pickerSelected(); sel != nil {
 		prev = sel.Preview()
 	} else {
 		prev = theme.Dim.Render("  (nothing to preview)")
 	}
-	previewBox := theme.Pane.Width(previewW).Height(visible).Render(prev)
-	listBox := lipgloss.NewStyle().Width(listW).Height(visible).Render(listB.String())
-	row := lipgloss.JoinHorizontal(lipgloss.Top, listBox, previewBox)
-	b.WriteString(row)
+	prevLines := strings.Split(prev, "\n")
+	if len(prevLines) > visible {
+		prevLines = prevLines[:visible]
+	}
+	for len(prevLines) < visible {
+		prevLines = append(prevLines, "")
+	}
+	for i := range prevLines {
+		prevLines[i] = padRight(truncate(prevLines[i], previewW-2), previewW-2)
+	}
+
+	var row strings.Builder
+	sep := theme.Hint.Render(" │ ")
+	for i := 0; i < visible; i++ {
+		row.WriteString(listLines[i])
+		row.WriteString(sep)
+		row.WriteString(prevLines[i])
+		row.WriteString("\n")
+	}
+	b.WriteString(row.String())
 	b.WriteString("\n")
 	b.WriteString(theme.Dim.Render("  ↑/↓: pick   enter: select   esc: cancel"))
 	return paddedBox(b.String(), width)
+}
+
+// padRight pads s with trailing spaces so its DISPLAY width is w.
+func padRight(s string, w int) string {
+	curr := lipgloss.Width(s)
+	if curr >= w {
+		return s
+	}
+	return s + strings.Repeat(" ", w-curr)
 }
 
 func (m Model) renderPalette() string {
