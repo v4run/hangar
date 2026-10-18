@@ -371,18 +371,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.paneFocus = focusSidebar
 			return m, nil
 		}
+		// h / ← walks UP the group tree one level — on a group row
+		// it jumps to the group's parent; on a connection / database
+		// row it jumps to that row's group. Collapse is intentionally
+		// NOT touched here — use `o` / `enter` to toggle fold.
 		if g := m.selectedGroup(); g != nil {
-			if !m.collapsed[g.ID] {
-				m.collapsed[g.ID] = true
-				m.persistCollapsed()
-				m.rebuildRows()
+			if g.Parent != uuid.Nil {
+				m.cursorToGroup(g.Parent)
 			}
 			return m, nil
 		}
-		// On a child row (connection / database that lives under a
-		// group), h jumps the cursor to that group's header — v1
-		// behaviour. If the row is already at root (no parent group)
-		// h is a no-op.
 		if c := m.selectedConnection(); c != nil && c.Group != uuid.Nil {
 			m.cursorToGroup(c.Group)
 			return m, nil
