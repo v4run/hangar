@@ -111,13 +111,13 @@ func (m *Model) handleLeaderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.leaderOffset--
 		}
 		return m, nil
-	case "pgdown":
+	case "pgdown", "ctrl+d":
 		m.leaderOffset += 10
 		if m.leaderOffset > maxOff {
 			m.leaderOffset = maxOff
 		}
 		return m, nil
-	case "pgup":
+	case "pgup", "ctrl+u":
 		m.leaderOffset -= 10
 		if m.leaderOffset < 0 {
 			m.leaderOffset = 0

@@ -195,12 +195,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.helpOffset > 0 {
 				m.helpOffset--
 			}
-		case "pgdown", " ":
+		case "pgdown", " ", "ctrl+d":
 			m.helpOffset += 10
 			if m.helpOffset > maxOff {
 				m.helpOffset = maxOff
 			}
-		case "pgup", "b":
+		case "pgup", "b", "ctrl+u":
 			m.helpOffset -= 10
 			if m.helpOffset < 0 {
 				m.helpOffset = 0

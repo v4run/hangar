@@ -499,7 +499,7 @@ func (m Model) renderLeader() string {
 	}
 	b.WriteString("\n")
 	if offset > 0 || end < len(bindings) {
-		scrollHint := fmt.Sprintf("  %d-%d / %d  (↑/↓ pgup/pgdn to scroll)", offset+1, end, len(bindings))
+		scrollHint := fmt.Sprintf("  %d-%d / %d  (↑/↓, ^u/^d, pgup/pgdn)", offset+1, end, len(bindings))
 		b.WriteString(theme.Hint.Render(scrollHint))
 		b.WriteString("\n")
 	}
@@ -720,7 +720,7 @@ func (m Model) renderHelp() string {
 	b.WriteString(window)
 	b.WriteString("\n\n")
 	if offset > 0 || end < len(lines) {
-		scrollHint := fmt.Sprintf("  %d-%d / %d  (j/k pgup/pgdn g/G to scroll)", offset+1, end, len(lines))
+		scrollHint := fmt.Sprintf("  %d-%d / %d  (j/k, ^u/^d, pgup/pgdn, g/G)", offset+1, end, len(lines))
 		b.WriteString(theme.Hint.Render(scrollHint))
 		b.WriteString("\n")
 	}
