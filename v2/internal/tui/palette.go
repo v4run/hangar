@@ -498,6 +498,8 @@ func (m *Model) submitPalette() (tea.Model, tea.Cmd) {
 		// palette, but if ctrl+s falls through we default to the
 		// non-destructive re-parent.
 		return m.deleteGroup(m.palette.target)
+	case PaletteGlobalSettings:
+		return m.saveGlobalSettings()
 	case PaletteShellInit:
 		return m.saveShellInit()
 	case PaletteAddForward:
@@ -670,6 +672,152 @@ func (m *Model) saveForward() (tea.Model, tea.Cmd) {
 	}
 	m.closePalette()
 	m.setToast("forward added", toastOK)
+	return *m, nil
+}
+
+// --- global settings ---
+
+const (
+	gsFieldFwdAgent = iota
+	gsFieldCompression
+	gsFieldLocalFwd
+	gsFieldRemoteFwd
+	gsFieldAlive
+	gsFieldAliveMax
+	gsFieldHostKey
+	gsFieldTTY
+	gsFieldExtra
+	gsFieldCount
+)
+
+var gsFieldLabels = []string{
+	"FwdAgent", "Compress", "LocalFwd", "RemoteFwd",
+	"Alive", "AliveMax", "HostKey", "TTY", "Extra",
+}
+var gsFieldHints = []string{
+	"yes / no / blank",
+	"yes / no / blank",
+	"8080:localhost:80, 9090:localhost:90",
+	"3000:localhost:3000",
+	"ServerAliveInterval seconds",
+	"ServerAliveCountMax",
+	"yes / no / accept-new / blank",
+	"yes / no / force / auto / blank",
+	"KEY=value, OTHER=val",
+}
+
+func (m *Model) openGlobalSettingsPalette() tea.Cmd {
+	fields := make([]paletteField, gsFieldCount)
+	for i := range fields {
+		ti := textinput.New()
+		ti.Prompt = ""
+		ti.Placeholder = gsFieldHints[i]
+		fields[i] = paletteField{label: gsFieldLabels[i], hint: gsFieldHints[i], input: ti}
+	}
+	if o := m.cfg.SSHOptions; o != nil {
+		if o.ForwardAgent != nil {
+			fields[gsFieldFwdAgent].input.SetValue(boolToYesNo(*o.ForwardAgent))
+		}
+		if o.Compression != nil {
+			fields[gsFieldCompression].input.SetValue(boolToYesNo(*o.Compression))
+		}
+		fields[gsFieldLocalFwd].input.SetValue(strings.Join(o.LocalForward, ", "))
+		fields[gsFieldRemoteFwd].input.SetValue(strings.Join(o.RemoteForward, ", "))
+		if o.ServerAliveInterval != nil {
+			fields[gsFieldAlive].input.SetValue(strconv.Itoa(*o.ServerAliveInterval))
+		}
+		if o.ServerAliveCountMax != nil {
+			fields[gsFieldAliveMax].input.SetValue(strconv.Itoa(*o.ServerAliveCountMax))
+		}
+		fields[gsFieldHostKey].input.SetValue(o.StrictHostKeyCheck)
+		fields[gsFieldTTY].input.SetValue(o.RequestTTY)
+		if len(o.ExtraOptions) > 0 {
+			parts := make([]string, 0, len(o.ExtraOptions))
+			for k, v := range o.ExtraOptions {
+				parts = append(parts, k+"="+v)
+			}
+			fields[gsFieldExtra].input.SetValue(strings.Join(parts, ", "))
+		}
+	}
+	for i := range fields {
+		fields[i].input.CursorEnd()
+	}
+	m.palette = paletteState{kind: PaletteGlobalSettings, title: "Global SSH settings", fields: fields}
+	m.overlay = OverlayPalette
+	m.mode = ModeEdit
+	return m.focusField(0)
+}
+
+func (m *Model) saveGlobalSettings() (tea.Model, tea.Cmd) {
+	opts := &config.SSHOptions{}
+	touched := false
+
+	if v := parseYesNo(m.palette.fields[gsFieldFwdAgent].input.Value()); v != nil {
+		opts.ForwardAgent = v
+		touched = true
+	}
+	if v := parseYesNo(m.palette.fields[gsFieldCompression].input.Value()); v != nil {
+		opts.Compression = v
+		touched = true
+	}
+	if lf := splitAndTrim(m.palette.fields[gsFieldLocalFwd].input.Value(), ","); len(lf) > 0 {
+		opts.LocalForward = lf
+		touched = true
+	}
+	if rf := splitAndTrim(m.palette.fields[gsFieldRemoteFwd].input.Value(), ","); len(rf) > 0 {
+		opts.RemoteForward = rf
+		touched = true
+	}
+	if s := strings.TrimSpace(m.palette.fields[gsFieldAlive].input.Value()); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			opts.ServerAliveInterval = &n
+			touched = true
+		} else {
+			m.palette.err = "Alive must be an integer"
+			return *m, nil
+		}
+	}
+	if s := strings.TrimSpace(m.palette.fields[gsFieldAliveMax].input.Value()); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			opts.ServerAliveCountMax = &n
+			touched = true
+		} else {
+			m.palette.err = "AliveMax must be an integer"
+			return *m, nil
+		}
+	}
+	if hk := strings.TrimSpace(m.palette.fields[gsFieldHostKey].input.Value()); hk != "" {
+		opts.StrictHostKeyCheck = hk
+		touched = true
+	}
+	if tty := strings.TrimSpace(m.palette.fields[gsFieldTTY].input.Value()); tty != "" {
+		opts.RequestTTY = tty
+		touched = true
+	}
+	if ex := strings.TrimSpace(m.palette.fields[gsFieldExtra].input.Value()); ex != "" {
+		opts.ExtraOptions = map[string]string{}
+		for _, pair := range splitAndTrim(ex, ",") {
+			kv := strings.SplitN(pair, "=", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			opts.ExtraOptions[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+		if len(opts.ExtraOptions) > 0 {
+			touched = true
+		}
+	}
+	if touched {
+		m.cfg.SSHOptions = opts
+	} else {
+		m.cfg.SSHOptions = nil
+	}
+	if err := config.Save(m.cfgDir, m.cfg); err != nil {
+		m.palette.err = err.Error()
+		return *m, nil
+	}
+	m.closePalette()
+	m.setToast("global settings saved", toastOK)
 	return *m, nil
 }
 

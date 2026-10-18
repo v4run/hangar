@@ -85,6 +85,7 @@ const (
 	PaletteDeleteScript
 	PaletteDeleteForward
 	PaletteQuitConfirm
+	PaletteGlobalSettings
 )
 
 // Tab names a detail-pane tab.

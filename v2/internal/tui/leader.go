@@ -49,6 +49,7 @@ func (m *Model) leaderBindings() []leaderBinding {
 		{"I", "edit connection shell init", func(m *Model) tea.Cmd { return m.cmdShellInit("") }},
 		{"S", "edit group shell init", func(m *Model) tea.Cmd { return m.cmdGroupShellInit("") }},
 		{"X", "delete selected group", func(m *Model) tea.Cmd { return m.cmdDeleteGroup("") }},
+		{",", "global SSH settings", func(m *Model) tea.Cmd { return m.openGlobalSettingsPalette() }},
 		{"m", "move selected to another group", func(m *Model) tea.Cmd { return m.openMovePicker() }},
 		{"b", "add database", func(m *Model) tea.Cmd { return m.cmdAddDB("") }},
 		{"?", "help", func(m *Model) tea.Cmd {

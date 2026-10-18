@@ -33,6 +33,7 @@ func (m *Model) commands() []Command {
 		{"shellinit", "edit shell init (connection scope)", (*Model).cmdShellInit},
 		{"groupinit", "edit shell init (selected group scope)", (*Model).cmdGroupShellInit},
 		{"globalinit", "edit shell init (global scope)", (*Model).cmdGlobalShellInit},
+		{"settings", "edit global SSH defaults", (*Model).cmdGlobalSettings},
 		{"delgroup", "delete the selected group (re-parents its contents)", (*Model).cmdDeleteGroup},
 		{"move", "move the selected row to another group (or root)", (*Model).cmdMove},
 		{"addforward", "add a local or remote port forward to the selected connection", (*Model).cmdAddForward},
@@ -194,6 +195,7 @@ func (m *Model) cmdGroupShellInit(_ string) tea.Cmd {
 	}
 	return m.openShellInitPalette(shellInitScopeGroup, g.ID, g.ShellInit)
 }
+func (m *Model) cmdGlobalSettings(_ string) tea.Cmd { return m.openGlobalSettingsPalette() }
 func (m *Model) cmdGlobalShellInit(_ string) tea.Cmd {
 	return m.openShellInitPalette(shellInitScopeGlobal, uuid.Nil, m.cfg.ShellInit)
 }
