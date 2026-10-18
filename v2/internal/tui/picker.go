@@ -22,12 +22,19 @@ type pickerState struct {
 	matches  []int // indexes into items for currently filtered rows
 	cursor   int
 	query    textinput.Model
-	onSelect func(Pickable) tea.Cmd
+	// onSelect runs when the user hits Enter on a match. It receives
+	// the LIVE Model pointer (not a closure capture) so mutations
+	// made inside the callback land on the current state — closures
+	// over the method's outer *Model are stale by the time the user
+	// presses enter (several Update calls have happened).
+	onSelect func(*Model, Pickable) tea.Cmd
 }
 
 // openPicker shows the fuzzy picker with items; onSelect fires when
-// the user hits enter on a match.
-func (m *Model) openPicker(title string, items []Pickable, onSelect func(Pickable) tea.Cmd) tea.Cmd {
+// the user hits enter on a match. The callback receives the live
+// *Model pointer so any mutations it makes stick to the current
+// state.
+func (m *Model) openPicker(title string, items []Pickable, onSelect func(*Model, Pickable) tea.Cmd) tea.Cmd {
 	ti := textinput.New()
 	ti.Prompt = "› "
 	ti.Placeholder = "type to filter…"
@@ -89,7 +96,7 @@ func (m *Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		onSel := m.picker.onSelect
 		m.closePicker()
 		if it != nil && onSel != nil {
-			return *m, onSel(it)
+			return *m, onSel(m, it)
 		}
 		return *m, nil
 	case "up", "ctrl+p", "ctrl+k":

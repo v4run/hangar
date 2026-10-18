@@ -44,9 +44,9 @@ func (m *Model) openScriptRunner() tea.Cmd {
 	for _, s := range r.Scripts {
 		items = append(items, scriptPickable{cfg: m.cfg, conn: c, s: s})
 	}
-	return m.openPicker("Run script", items, func(p Pickable) tea.Cmd {
+	return m.openPicker("Run script", items, func(mm *Model, p Pickable) tea.Cmd {
 		if sp, ok := p.(scriptPickable); ok {
-			return m.runScriptOn(c, sp.s)
+			return mm.runScriptOn(c, sp.s)
 		}
 		return nil
 	})

@@ -109,10 +109,10 @@ func (m *Model) cmdConn(_ string) tea.Cmd {
 	for i := range m.cfg.Connections {
 		items = append(items, connPickable{cfg: m.cfg, conn: &m.cfg.Connections[i]})
 	}
-	return m.openPicker("Connections", items, func(p Pickable) tea.Cmd {
+	return m.openPicker("Connections", items, func(mm *Model, p Pickable) tea.Cmd {
 		if cp, ok := p.(connPickable); ok {
-			m.cursorToConnection(cp.conn.ID)
-			return m.beginConnect(cp.conn)
+			mm.cursorToConnection(cp.conn.ID)
+			return mm.beginConnect(cp.conn)
 		}
 		return nil
 	})
@@ -123,9 +123,9 @@ func (m *Model) cmdGroup(_ string) tea.Cmd {
 	for i := range m.cfg.Groups {
 		items = append(items, groupPickable{cfg: m.cfg, g: &m.cfg.Groups[i]})
 	}
-	return m.openPicker("Groups", items, func(p Pickable) tea.Cmd {
+	return m.openPicker("Groups", items, func(mm *Model, p Pickable) tea.Cmd {
 		if gp, ok := p.(groupPickable); ok {
-			m.cursorToGroup(gp.g.ID)
+			mm.cursorToGroup(gp.g.ID)
 		}
 		return nil
 	})
@@ -218,10 +218,10 @@ func (m *Model) cmdDB(_ string) tea.Cmd {
 	for i := range m.cfg.Databases {
 		items = append(items, dbPickable{cfg: m.cfg, db: &m.cfg.Databases[i]})
 	}
-	return m.openPicker("Databases", items, func(p Pickable) tea.Cmd {
+	return m.openPicker("Databases", items, func(mm *Model, p Pickable) tea.Cmd {
 		if dp, ok := p.(dbPickable); ok {
-			m.cursorToDatabase(dp.db.ID)
-			return m.launchDatabase(dp.db)
+			mm.cursorToDatabase(dp.db.ID)
+			return mm.launchDatabase(dp.db)
 		}
 		return nil
 	})

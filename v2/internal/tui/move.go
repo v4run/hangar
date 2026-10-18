@@ -69,12 +69,12 @@ func (m *Model) openMovePicker() tea.Cmd {
 		items = append(items, moveTarget{cfg: m.cfg, id: g.ID, g: g})
 	}
 	title := "Move " + rowSummary(r) + " to…"
-	return m.openPicker(title, items, func(p Pickable) tea.Cmd {
+	return m.openPicker(title, items, func(mm *Model, p Pickable) tea.Cmd {
 		mt, ok := p.(moveTarget)
 		if !ok {
 			return nil
 		}
-		return m.moveSelectedRow(r, mt.id)
+		return mm.moveSelectedRow(r, mt.id)
 	})
 }
 
