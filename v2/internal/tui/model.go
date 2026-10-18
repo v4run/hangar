@@ -165,6 +165,7 @@ type Model struct {
 	paletteUseTA      bool               // true when the active palette owns the textarea
 	paletteUseTags    bool               // true when the active palette owns tagChips
 	paletteEditing    bool               // nav mode (j/k select) vs edit mode (keystrokes go to the focused field)
+	paletteEditSnap   string             // field value when edit mode was entered — restored on esc
 	spinner           spinner.Model      // tick-driven busy indicator for host-key scans etc.
 	spinning          bool
 

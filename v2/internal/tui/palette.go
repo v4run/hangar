@@ -175,8 +175,11 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.paletteEditing {
 		cur := &m.palette.fields[m.palette.focus]
 		switch msg.String() {
-		case "esc", "enter":
-			m.exitEditMode()
+		case "enter":
+			m.exitEditMode(true)
+			return *m, nil
+		case "esc":
+			m.exitEditMode(false)
 			return *m, nil
 		}
 		// Choice fields cycle on h / l / ← / → in edit mode; typing
@@ -241,9 +244,13 @@ func cycleChoiceField(f *paletteField, dir int) {
 	f.input.SetValue(f.choices[idx])
 }
 
-// enterEditMode focuses the currently-selected field for text input.
+// enterEditMode focuses the currently-selected field for text input
+// and snapshots its value so esc can revert.
 func (m *Model) enterEditMode() tea.Cmd {
 	m.paletteEditing = true
+	if m.palette.focus >= 0 && m.palette.focus < len(m.palette.fields) {
+		m.paletteEditSnap = m.palette.fields[m.palette.focus].input.Value()
+	}
 	if m.paletteUseTags && m.palette.focus == m.palette.tagFieldIdx {
 		return m.paletteTags.Focus()
 	}
@@ -253,9 +260,16 @@ func (m *Model) enterEditMode() tea.Cmd {
 	return nil
 }
 
-// exitEditMode blurs the active editor and returns to nav mode.
-func (m *Model) exitEditMode() {
+// exitEditMode blurs the active editor. commit=true keeps the
+// in-field value (enter); commit=false restores the pre-edit
+// snapshot (esc / ctrl+c).
+func (m *Model) exitEditMode(commit bool) {
+	if !commit && m.palette.focus >= 0 && m.palette.focus < len(m.palette.fields) {
+		m.palette.fields[m.palette.focus].input.SetValue(m.paletteEditSnap)
+		m.palette.fields[m.palette.focus].input.CursorEnd()
+	}
 	m.paletteEditing = false
+	m.paletteEditSnap = ""
 	for i := range m.palette.fields {
 		m.palette.fields[i].input.Blur()
 	}
