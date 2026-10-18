@@ -192,11 +192,10 @@ func (m Model) renderRow(r row, selected bool, width int) string {
 		line := indent + theme.Label.Render(chev+" "+name) + tag
 		return clipLine(line, width, selected)
 	case rowConnection:
-		// Connections: dim bullet + normal name, indented under
-		// their group.
-		head := theme.Hint.Render("• ")
-		body := theme.Normal.Render(r.conn.Name)
-		return clipLine(indent+head+body, width, selected)
+		// Connections: plain name, indented under their group. The
+		// icon was decorative; dropping it widens the usable name
+		// space.
+		return clipLine(indent+theme.Normal.Render(r.conn.Name), width, selected)
 	case rowDatabase:
 		// Databases: dim hex + engine badge next to the name so
 		// `pg` / `my` / `rd` / `sq` reads at a glance.

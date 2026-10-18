@@ -34,6 +34,7 @@ func (m *Model) commands() []Command {
 		{"groupinit", "edit shell init (selected group scope)", (*Model).cmdGroupShellInit},
 		{"globalinit", "edit shell init (global scope)", (*Model).cmdGlobalShellInit},
 		{"delgroup", "delete the selected group (re-parents its contents)", (*Model).cmdDeleteGroup},
+		{"move", "move the selected row to another group (or root)", (*Model).cmdMove},
 		{"addforward", "add a local or remote port forward to the selected connection", (*Model).cmdAddForward},
 		{"help", "show help overlay", (*Model).cmdHelp},
 		{"quit", "quit", (*Model).cmdQuit},
@@ -203,6 +204,8 @@ func (m *Model) cmdAddForward(_ string) tea.Cmd {
 	m.setToast("no connection under cursor", toastErr)
 	return nil
 }
+func (m *Model) cmdMove(_ string) tea.Cmd { return m.openMovePicker() }
+
 func (m *Model) cmdDeleteGroup(_ string) tea.Cmd {
 	if g := m.selectedGroup(); g != nil {
 		return m.openDeleteGroupPalette(g)
