@@ -350,6 +350,8 @@ func (m *Model) openEditConnectionPalette(c *config.Connection) tea.Cmd {
 }
 
 func (m *Model) openConnectionPalette(kind PaletteKind, title string, c *config.Connection) tea.Cmd {
+	jumpSuggestions := connectionNameSuggestions(m.cfg, c)
+	keySuggestions := identityFileSuggestions()
 	fields := make([]paletteField, connFieldCount)
 	for i := range fields {
 		ti := textinput.New()
@@ -357,6 +359,14 @@ func (m *Model) openConnectionPalette(kind PaletteKind, title string, c *config.
 		ti.Placeholder = connFieldHints[i]
 		if i == connFieldPassword {
 			ti.EchoMode = textinput.EchoPassword
+		}
+		if i == connFieldJump && len(jumpSuggestions) > 0 {
+			ti.ShowSuggestions = true
+			ti.SetSuggestions(jumpSuggestions)
+		}
+		if i == connFieldKey && len(keySuggestions) > 0 {
+			ti.ShowSuggestions = true
+			ti.SetSuggestions(keySuggestions)
 		}
 		pf := paletteField{label: connFieldLabels[i], hint: connFieldHints[i], input: ti}
 		switch i {
@@ -518,11 +528,21 @@ func (m *Model) openEditGroupPalette(g *config.Group) tea.Cmd {
 }
 
 func (m *Model) openGroupPalette(kind PaletteKind, title string, g *config.Group) tea.Cmd {
+	jumpSuggestions := connectionNameSuggestions(m.cfg, nil)
+	keySuggestions := identityFileSuggestions()
 	fields := make([]paletteField, groupFieldCount)
 	for i := range fields {
 		ti := textinput.New()
 		ti.Prompt = ""
 		ti.Placeholder = groupFieldHints[i]
+		if i == groupFieldJump && len(jumpSuggestions) > 0 {
+			ti.ShowSuggestions = true
+			ti.SetSuggestions(jumpSuggestions)
+		}
+		if i == groupFieldKey && len(keySuggestions) > 0 {
+			ti.ShowSuggestions = true
+			ti.SetSuggestions(keySuggestions)
+		}
 		pf := paletteField{label: groupFieldLabels[i], hint: groupFieldHints[i], input: ti}
 		switch i {
 		case groupFieldFwdAgent, groupFieldCompression:
