@@ -1775,8 +1775,19 @@ func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 	}
 	// If editing an existing group whose path has moved, transfer its
 	// contents (child groups, connections, databases) to the new UUID
-	// and drop the original row.
+	// and drop the original row — but first carry the metadata that
+	// resolveOrCreateGroupPath didn't initialise (Order, ShellInit,
+	// Scripts) onto the new row so a rename doesn't reset sort
+	// position or drop other state.
 	if id != uuid.Nil && id != gID {
+		var old *config.Group
+		for i := range m.cfg.Groups {
+			if m.cfg.Groups[i].ID == id {
+				cp := m.cfg.Groups[i]
+				old = &cp
+				break
+			}
+		}
 		for i := range m.cfg.Groups {
 			if m.cfg.Groups[i].Parent == id {
 				m.cfg.Groups[i].Parent = gID
@@ -1796,6 +1807,20 @@ func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 			if m.cfg.Groups[i].ID == id {
 				m.cfg.Groups = append(m.cfg.Groups[:i], m.cfg.Groups[i+1:]...)
 				break
+			}
+		}
+		if old != nil {
+			for i := range m.cfg.Groups {
+				if m.cfg.Groups[i].ID == gID {
+					m.cfg.Groups[i].Order = old.Order
+					if m.cfg.Groups[i].ShellInit == "" {
+						m.cfg.Groups[i].ShellInit = old.ShellInit
+					}
+					if len(m.cfg.Groups[i].Scripts) == 0 {
+						m.cfg.Groups[i].Scripts = old.Scripts
+					}
+					break
+				}
 			}
 		}
 	}
