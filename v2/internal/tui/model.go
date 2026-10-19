@@ -184,8 +184,10 @@ type Model struct {
 	copyRows      map[uuid.UUID]bool    // marked for copy (duplicate on paste)
 
 	// Connection target of the current connect intent (host-key
-	// confirm path).
+	// confirm path) + the specific hop whose key is being verified
+	// (may be the destination or a jump host).
 	pendingConn *config.Connection
+	pendingHop  *config.Connection
 	pendingKeys []sshauth.HostKey
 
 	// Right-pane vertical scroll offset for the detail content.
