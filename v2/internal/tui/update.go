@@ -248,19 +248,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// never gets trapped. It only quits the app from a clean sidebar
 	// view. Also exits visual mode / filter mode if active.
 	if msg.String() == "ctrl+c" {
-		if m.overlay != OverlayNone {
+		switch {
+		case m.mode == ModeConnect:
+			// Mid-connect handoff: swallow ctrl+c so the user
+			// doesn't accidentally quit between pressing enter on
+			// the host-key palette and ssh actually taking over
+			// the terminal. Once ExecProcess is in flight bubbletea
+			// has released the TTY and the key goes to ssh anyway.
+			return m, nil
+		case m.overlay != OverlayNone:
 			msg = tea.KeyMsg{Type: tea.KeyEsc}
-		} else if m.visualMode {
+		case m.visualMode:
 			m.exitVisual()
 			return m, nil
-		} else if m.filtering {
+		case m.filtering:
 			m.filtering = false
 			m.filter.Blur()
 			m.filter.SetValue("")
 			m.rebuildRows()
 			m.cursor = 0
 			return m, nil
-		} else {
+		default:
 			return m, tea.Quit
 		}
 	}

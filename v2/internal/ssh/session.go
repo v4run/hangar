@@ -114,11 +114,16 @@ func NewCommand(cfg *config.Config, r *config.Resolved) (*exec.Cmd, func()) {
 		}
 	}
 	cleanup := func() {}
-	if pw := resolvePassword(r.Connection); pw != "" {
+	// Collect password entries for the destination AND every jump
+	// host in the chain, so ssh asking for either gets the right
+	// one. The askpass script that ssh invokes receives the prompt
+	// text as $1 — we grep for the hostname in that text.
+	entries := collectPasswordEntries(cfg, r.Connection)
+	if len(entries) > 0 {
 		scriptDir, err := os.MkdirTemp("", "hangar-askpass-*")
 		if err == nil {
 			scriptPath := filepath.Join(scriptDir, "askpass.sh")
-			body := fmt.Sprintf("#!/bin/sh\necho '%s'\n", escapeSingle(pw))
+			body := buildAskpassScript(entries)
 			if err := os.WriteFile(scriptPath, []byte(body), 0o700); err == nil {
 				if cmd.Env == nil {
 					cmd.Env = os.Environ()
@@ -134,6 +139,59 @@ func NewCommand(cfg *config.Config, r *config.Resolved) (*exec.Cmd, func()) {
 		}
 	}
 	return cmd, cleanup
+}
+
+// passwordEntry pairs a host (as it appears in ssh's prompt) with
+// the password to answer with.
+type passwordEntry struct {
+	Host     string
+	Password string
+}
+
+// collectPasswordEntries walks the destination + jump chain and
+// returns a password per hop that has one. Destination comes last so
+// its password is the fallback when the prompt doesn't match any
+// known host.
+func collectPasswordEntries(cfg *config.Config, dst *config.Connection) []passwordEntry {
+	seen := map[uuid.UUID]bool{}
+	var out []passwordEntry
+	// Walk jumps first.
+	for cur := dst.JumpHost; cur != uuid.Nil && !seen[cur]; {
+		seen[cur] = true
+		j := findConn(cfg, cur)
+		if j == nil {
+			break
+		}
+		if pw := resolvePassword(j); pw != "" {
+			out = append(out, passwordEntry{Host: j.Host, Password: pw})
+		}
+		cur = j.JumpHost
+	}
+	if pw := resolvePassword(dst); pw != "" {
+		out = append(out, passwordEntry{Host: dst.Host, Password: pw})
+	}
+	return out
+}
+
+// buildAskpassScript writes a /bin/sh script that reads the prompt
+// text from $1 (ssh calls askpass with the full prompt as argv[1]),
+// grep-matches it against each entry's host, and echoes the first
+// matching password. The last entry acts as fallback so an
+// unmatchable prompt still answers with the destination password.
+func buildAskpassScript(entries []passwordEntry) string {
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n")
+	b.WriteString("case \"$1\" in\n")
+	for _, e := range entries {
+		fmt.Fprintf(&b, "  *%s*) printf '%%s\\n' '%s' ; exit 0 ;;\n",
+			escapeSingle(e.Host), escapeSingle(e.Password))
+	}
+	// Fallback — the LAST entry (which is the destination; see
+	// collectPasswordEntries) answers anything we couldn't match.
+	fmt.Fprintf(&b, "  *) printf '%%s\\n' '%s' ;;\n",
+		escapeSingle(entries[len(entries)-1].Password))
+	b.WriteString("esac\n")
+	return b.String()
 }
 
 func formatDest(c *config.Connection) string {
