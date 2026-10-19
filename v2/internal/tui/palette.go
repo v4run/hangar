@@ -1819,6 +1819,15 @@ func (m *Model) saveGroup(id uuid.UUID) (tea.Model, tea.Cmd) {
 					if len(m.cfg.Groups[i].Scripts) == 0 {
 						m.cfg.Groups[i].Scripts = old.Scripts
 					}
+					// Seed SSHOptions from the old group so the
+					// fill-in block below merges in the fields the
+					// group palette doesn't expose (Alive, AliveMax,
+					// HostKey, TTY, Extra) instead of dropping them
+					// on rename.
+					if m.cfg.Groups[i].SSHOptions == nil && old.SSHOptions != nil {
+						clone := *old.SSHOptions
+						m.cfg.Groups[i].SSHOptions = &clone
+					}
 					break
 				}
 			}
